@@ -85,6 +85,15 @@ def main() -> int:
         print("FAIL  deliberate triple repetition was rejected")
         failures += 1
 
+    repeated = engine._repetition_component({
+        "literal_meaning": "king of kings",
+        "chinese_terms": ["万王之王"],
+        "component_candidates": ["王", "口"],
+    })
+    if repeated != "王":
+        print("FAIL  repeated 'king of kings' concept did not select 王")
+        failures += 1
+
     four = engine._ideographic_candidate(
         {
             "type": "ideographic",

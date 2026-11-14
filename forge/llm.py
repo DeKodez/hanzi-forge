@@ -28,7 +28,8 @@ ideographic compound (会意字).
 Before designing, interpret the phrase. If it is a title, name, or loanword, translate
 its meaning: shahanshah = king of kings. If the meaning naturally repeats or stacks a
 component (king of kings -> 王+王+王; a forest -> 木+木+木; gold -> 金+金+金), use an
-ideographic compound.
+ideographic compound. When the analyst's literal meaning is "X of X", include a
+threefold repeated-component design before the phono-semantic alternatives.
 
 Two design types:
 1. "phono_semantic": exactly two components, a semantic radical plus a phonetic sound
@@ -196,6 +197,9 @@ Return JSON only:
 Rules:
 - For a name, tradition, or loanword, use the conventional Chinese form. Example:
   Vishnu -> 毗湿奴; Vaishnavism -> 毗湿奴派 (devotion to Vishnu).
+- If the literal meaning repeats or stacks a concept (king of kings, lord of lords,
+  a forest), include the repeated character in component_candidates and list the
+  repeated Chinese term (for example 王 and 万王之王).
 - component_candidates must be single CJK characters usable as glyph components:
   prefer simple semantic radicals (示, 心, 水, 火, 人, 口, 教 is too heavy);
   include at most one 4-9 stroke transliteration anchor (e.g. 毗, 奴, 信, 梵).
