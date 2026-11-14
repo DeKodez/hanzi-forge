@@ -125,6 +125,11 @@ for stroke-area balance, coverage, and stretch instead of taking the first
 valid arrangement. The roof cap for 宀 adapts to the component below it, and
 single-sided short components such as 灬 keep their natural height.
 
+The IDS layer supports the standard operators ⿰ ⿱ ⿲ ⿳ ⿴ ⿵ ⿶ ⿷ ⿸ ⿹ ⿺ ⿻,
+including overlay, plus the newer ⿼ ⿽ ⿾ ⿿ operators. Complete simple characters
+can be used as components; the optional `forms` field preserves their full forms
+instead of forcing a positional radical variant.
+
 The engine also rejects duplicate radicals, repeated components in mixed
 three-part designs, and full compound characters in three- or four-part
 designs. Two complete compounds in a two-part design are reduced to one
