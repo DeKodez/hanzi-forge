@@ -1068,50 +1068,44 @@ class ForgeEngine:
             + 1.5 * anchor_penalty
         )
 
-    def _repetition_component(self, analysis: dict | None) -> str | None:
-        if not isinstance(analysis, dict):
-            return None
-        components = [
-            char for char in analysis.get("component_candidates", [])
-            if isinstance(char, str)
-            and len(char) == 1
-            and is_cjk(char)
-            and self._component_ok(char)
-        ]
-        literal = str(analysis.get("literal_meaning") or "")
-        match = re.search(r"\b([A-Za-z]+)\s+of\s+\1s?\b", literal, re.I)
-        if match:
-            stem = match.group(1).lower().rstrip("s")
-            for char in components:
-                if stem and stem in self._meaning(char).lower():
-                    return char
-        for term in analysis.get("chinese_terms") or []:
-            text = str(term)
-            for char in components:
-                if text.count(char) >= 2 and self._is_simple(char):
-                    return char
-        return None
-
-    def _repetition_candidate(
-        self, analysis: dict | None, phrase: str
-    ) -> Candidate | None:
-        component = self._repetition_component(analysis)
-        if component is None:
-            return None
-        ids = to_ids(("⿱", component, ("⿰", component, component)))
-        literal = str((analysis or {}).get("literal_meaning") or "").strip()
-        gloss = literal or str((analysis or {}).get("definition") or "").strip()
-        design = {
-            "type": "ideographic",
-            "components": [component, component, component],
-            "structure": ids,
-            "semantic": [component, component, component],
-            "phonetic": "",
-            "reading": self._pinyin_of(component),
-            "gloss": gloss,
-            "rationale": "Three repeated components: the meaning repeated and stacked.",
-        }
-        return self._ideographic_candidate(design, phrase)
+    def _strategy_designs(self, plans: list[dict] | None) -> list[dict]:
+        designs: list[dict] = []
+        for plan in plans or []:
+            components = plan.get("components")
+            if not isinstance(components, list) or not (2 <= len(components) <= 4):
+                continue
+            mode = str(plan.get("mode") or "ideographic").lower()
+            if mode in {"semantic_phonetic", "phono_semantic"} and len(components) == 2:
+                semantic = plan.get("semantic")
+                if isinstance(semantic, list):
+                    semantic = semantic[0] if len(semantic) == 1 else ""
+                if not isinstance(semantic, str):
+                    semantic = ""
+                designs.append({
+                    "type": "phono_semantic",
+                    "components": components,
+                    "structure": plan.get("structure") or "",
+                    "semantic": semantic,
+                    "phonetic": str(plan.get("phonetic") or ""),
+                    "reading": str(plan.get("reading") or ""),
+                    "gloss": str(plan.get("gloss") or ""),
+                    "rationale": str(plan.get("rationale") or ""),
+                })
+            else:
+                semantic = plan.get("semantic")
+                if not isinstance(semantic, list):
+                    semantic = components
+                designs.append({
+                    "type": "ideographic",
+                    "components": components,
+                    "structure": plan.get("structure") or "",
+                    "semantic": semantic,
+                    "phonetic": "",
+                    "reading": str(plan.get("reading") or ""),
+                    "gloss": str(plan.get("gloss") or ""),
+                    "rationale": str(plan.get("rationale") or ""),
+                })
+        return designs
 
     def _ideographic_candidate(self, design: dict, phrase: str) -> Candidate | None:
         components = design.get("components")
@@ -1245,14 +1239,16 @@ class ForgeEngine:
         variation: int = 0,
         feedback: str = "",
         analysis: dict | None = None,
+        designs: list[dict] | None = None,
     ) -> list[Candidate]:
-        designs = llm.design(
-            phrase,
-            count=count,
-            variation=variation,
-            feedback=feedback,
-            analysis=analysis,
-        )
+        if designs is None:
+            designs = llm.design(
+                phrase,
+                count=count,
+                variation=variation,
+                feedback=feedback,
+                analysis=analysis,
+            )
         candidates: list[Candidate] = []
         self._last_llm_rejected = []
 
@@ -1435,8 +1431,6 @@ class ForgeEngine:
             if mode == "new" and llm_requested
             else None
         )
-        repeat_candidate = self._repetition_candidate(analysis, phrase)
-
         ranked = self._score_components(matches)
         hint_groups = self.index.hint_groups(phrase)
         hints = list(dict.fromkeys(char for chars in hint_groups.values() for char in chars))
@@ -1456,14 +1450,15 @@ class ForgeEngine:
 
         llm_used = False
         if mode == "new" and llm_requested:
+            strategy_plans = llm.strategize(phrase, analysis) if analysis else []
+            strategy_designs = self._strategy_designs(strategy_plans)
             creative = self._llm_candidates(
                 phrase,
                 count=6,
                 variation=llm_variation,
                 analysis=analysis,
+                designs=strategy_designs,
             )
-            if repeat_candidate is not None:
-                creative.insert(0, repeat_candidate)
             rejected = list(dict.fromkeys(self._last_llm_rejected))
             attempts = 0
             while len(creative) < count and attempts < 2:

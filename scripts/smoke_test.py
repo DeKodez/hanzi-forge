@@ -11,6 +11,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from forge import llm  # noqa: E402
 from forge.engine import ForgeEngine, sanitize_layout_text  # noqa: E402
 
 PHRASES = [
@@ -85,13 +86,24 @@ def main() -> int:
         print("FAIL  deliberate triple repetition was rejected")
         failures += 1
 
-    repeated = engine._repetition_component({
-        "literal_meaning": "king of kings",
-        "chinese_terms": ["万王之王"],
-        "component_candidates": ["王", "口"],
+    plans = llm._normalize_plans({
+        "plans": [{
+            "mode": "repetition",
+            "components": ["王", "王", "王"],
+            "structure": "⿱王⿰王王",
+            "semantic": ["王", "王", "王"],
+            "phonetic": "",
+            "reading": "wáng",
+            "gloss": "king of kings",
+            "rationale": "repeated kingship",
+        }]
     })
-    if repeated != "王":
-        print("FAIL  repeated 'king of kings' concept did not select 王")
+    if not plans or plans[0]["mode"] != "repetition":
+        print("FAIL  strategist plan normalization failed")
+        failures += 1
+    strategy_designs = engine._strategy_designs(plans)
+    if not strategy_designs or strategy_designs[0]["type"] != "ideographic":
+        print("FAIL  strategist plan was not converted to an ideographic design")
         failures += 1
 
     four = engine._ideographic_candidate(

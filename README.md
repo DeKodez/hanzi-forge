@@ -76,8 +76,10 @@ are gitignored.
 ## Optional language-model mode
 
 The deterministic pipeline works without a key. With `DEEPSEEK_API_KEY` set,
-the app can use a language model to propose phono-semantic or ideographic
-designs. The engine validates every proposal before rendering it.
+the app uses the language model in stages: concept analysis, composition
+planning, and final design. Plans cover repetition, semantic-plus-phonetic,
+ideographic, and metaphorical approaches. Every plan passes the same novelty, renderability,
+position, and redundancy checks as the deterministic pipeline before rendering.
 
 ```bash
 python app.py                    # use the LLM checkbox in the UI

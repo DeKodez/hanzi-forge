@@ -354,6 +354,169 @@ def analyze(phrase: str) -> dict | None:
 
 
 
+STRATEGY_VERSION = "strategy-v1"
+STRATEGY_PROMPT = """You are a composition strategist for a Chinese-character design
+tool. Given a phrase and its concept analysis, propose five distinct plans for ONE new
+glyph. Think about both meaning and sound.
+
+Use these strategies:
+- repetition or stacking for repeated, plural, superlative, or "X of X" concepts;
+- a semantic radical plus a phonetic or transliteration anchor, with the reading from
+  the phonetic;
+- an ideographic scene made from two to four semantic components;
+- a metaphorical, enclosure, or contrast-based composition.
+
+Use the analysis's Chinese terms, transliteration, and component candidates. For a
+foreign term, use the standard Chinese sound as well as the meaning. Do not default to
+generic heart, king, water, or animal symbols.
+
+Every component must be one renderable CJK character and must not be a function
+character. Use two to four components, each exactly once. Full compound components
+must be at most nine strokes. The structure must be a full IDS string using the
+operators ⿰ ⿱ ⿲ ⿳ ⿴ ⿵ ⿶ ⿷ ⿸ ⿹ ⿺. For three components use a nested
+two-dimensional arrangement such as ⿱A⿰BC or ⿰A⿱BC, not a text description.
+
+For repeated concepts, include a compact repeated pair and a stacked three- or
+four-component variant. The engine rejects structures that are already existing
+characters, so the variant matters.
+
+Return JSON only:
+{"plans": [
+  {"mode": "repetition|semantic_phonetic|ideographic|metaphorical",
+   "components": ["..."], "structure": "...", "semantic": ["..."],
+   "phonetic": "", "reading": "one syllable", "gloss": "short meaning",
+   "rationale": "why this encodes meaning and/or sound"}
+]}
+"""
+
+
+def _normalize_plans(data) -> list[dict]:
+    if isinstance(data, dict) and isinstance(data.get("plans"), list):
+        raw_plans = data["plans"]
+    elif isinstance(data, list):
+        raw_plans = data
+    else:
+        return []
+    plans: list[dict] = []
+    for raw in raw_plans:
+        if not isinstance(raw, dict):
+            continue
+        components = [
+            char.strip() for char in raw.get("components", [])
+            if _single_cjk(char)
+        ]
+        if not (2 <= len(components) <= 4):
+            continue
+        structure = str(raw.get("structure") or "").strip()
+        if not structure or structure[0] not in "⿰⿱⿲⿳⿴⿵⿶⿷⿸⿹⿺":
+            continue
+        semantic = raw.get("semantic")
+        if isinstance(semantic, list):
+            semantic = [
+                text for text in semantic if isinstance(text, str) and text.strip()
+            ]
+        elif isinstance(semantic, str):
+            semantic = [semantic.strip()]
+        else:
+            semantic = []
+        plans.append({
+            "mode": str(raw.get("mode") or "ideographic").strip()[:40],
+            "components": components,
+            "structure": structure[:120],
+            "semantic": semantic[:4],
+            "phonetic": str(raw.get("phonetic") or "").strip()[:10],
+            "reading": str(raw.get("reading") or "").strip()[:20],
+            "gloss": str(raw.get("gloss") or "").strip()[:240],
+            "rationale": str(raw.get("rationale") or "").strip()[:300],
+        })
+    return plans[:8]
+
+
+def strategize(
+    phrase: str,
+    analysis: dict | None,
+    feedback: str = "",
+) -> list[dict]:
+    """Return composition plans for an analyzed phrase, or []."""
+    if not isinstance(analysis, dict):
+        return []
+    key, base, model = _config()
+    if not key:
+        return []
+
+    digest = __import__("hashlib").sha1(
+        json.dumps(analysis, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()[:12]
+    cache_key = f"{STRATEGY_VERSION}::{model}::{phrase.strip().lower()}::{digest}"
+    if feedback:
+        cache_key += "::f" + __import__("hashlib").sha1(
+            feedback.encode("utf-8")
+        ).hexdigest()[:8]
+    cache = _load_cache()
+    if cache_key in cache:
+        cached = cache[cache_key]
+        return cached if isinstance(cached, list) else []
+
+    max_tokens, timeout = _limits()
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": STRATEGY_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    f'Phrase: "{phrase}"\nConcept analysis:\n'
+                    + json.dumps(analysis, ensure_ascii=False)
+                    + (f"\nThe previous plans failed validation: {feedback}. "
+                       "Propose different structures and component counts." if feedback else "")
+                ),
+            },
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.7,
+        "max_tokens": min(max_tokens, 2200),
+        "reasoning_effort": "none",
+    }
+
+    for attempt in range(2):
+        try:
+            import httpx
+
+            with httpx.Client(timeout=timeout) as client:
+                response = client.post(
+                    f"{base}/chat/completions",
+                    headers={"Authorization": f"Bearer {key}"},
+                    json=payload,
+                )
+                if (
+                    response.status_code == 400
+                    and "reasoning_effort" in payload
+                    and "reasoning_effort" in response.text
+                ):
+                    payload.pop("reasoning_effort", None)
+                    response = client.post(
+                        f"{base}/chat/completions",
+                        headers={"Authorization": f"Bearer {key}"},
+                        json=payload,
+                    )
+            if response.status_code >= 400:
+                print(f"LLM strategist unavailable: HTTP {response.status_code}")
+                return []
+            content = response.json()["choices"][0]["message"].get("content") or ""
+            plans = _normalize_plans(_parse_json(content))
+            if plans:
+                cache[cache_key] = plans
+                _save_cache(cache)
+                return plans
+            print("LLM strategist: invalid or empty plans")
+            if attempt == 0:
+                payload["temperature"] = 0.2
+        except Exception as exc:
+            print(f"LLM strategist unavailable: {str(exc)[:180]}")
+            return []
+    return []
+
+
 def _reasoning_mode() -> str:
     load_dotenv()
     return os.environ.get("FORGE_LLM_REASONING", DEFAULT_REASONING).strip().lower()
