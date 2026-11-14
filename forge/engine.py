@@ -190,6 +190,9 @@ class ForgeEngine:
             if record.get("pinyin")
         }
         self.valid_pinyin.discard("")
+        self.template_counts: Counter = Counter()
+        self.template_max = 1
+        self._build_template_counts()
         self.position_counts: dict[str, Counter] = defaultdict(Counter)
         self._build_position_counts()
         self._last_llm_rejected: list[str] = []
@@ -214,6 +217,24 @@ class ForgeEngine:
         if op in {"⿴", "⿵", "⿶", "⿷", "⿸", "⿹", "⿺"}:
             return "outer" if index == 0 else "inner"
         return "other"
+
+    @staticmethod
+    def _template_skel(node) -> str:
+        if isinstance(node, str):
+            return "X"
+        return node[0] + "".join(
+            ForgeEngine._template_skel(child) for child in node[1:]
+        )
+
+    def _build_template_counts(self) -> None:
+        for signature in self.real:
+            node = parse_ids(signature)
+            if node is None or isinstance(node, str):
+                continue
+            if len(all_leaves(node)) not in {3, 4}:
+                continue
+            self.template_counts[self._template_skel(node)] += 1
+        self.template_max = max(self.template_counts.values(), default=1)
 
     def _build_position_counts(self) -> None:
         def walk(node, op=None, index=0, total=1) -> None:
@@ -985,12 +1006,15 @@ class ForgeEngine:
         leaves = all_leaves(node)
         if len(leaves) == 3:
             first, second, third = leaves
-            raw = [
+            raw = []
+            if node[0] not in {"⿲", "⿳"}:
+                raw.append(node)
+            raw.extend([
                 ("⿱", first, ("⿰", second, third)),
                 ("⿰", first, ("⿱", second, third)),
                 ("⿰", ("⿱", first, second), third),
                 ("⿱", ("⿰", first, second), third),
-            ]
+            ])
             options = []
             for option in raw:
                 if option not in options:
@@ -1060,12 +1084,39 @@ class ForgeEngine:
             / max(1, len(stretches))
         )
         depth = sum(signature.count(operator) for operator in ALL_OPS)
+        node = parse_ids(signature)
+        pyramid_penalty = 0.0
+        if len(shapes) == 3 and max(strokes) - min(strokes) <= 1:
+            parsed = node
+            if isinstance(parsed, tuple) and parsed and parsed[0] == "⿱":
+                top, bottom = parsed[1], parsed[2]
+                if (
+                    isinstance(top, str)
+                    and isinstance(bottom, tuple)
+                    and bottom
+                    and bottom[0] == "⿰"
+                ):
+                    pyramid_penalty -= 0.10
+                elif (
+                    isinstance(top, tuple)
+                    and top
+                    and top[0] == "⿰"
+                    and isinstance(bottom, str)
+                ):
+                    pyramid_penalty += 0.10
+        template = self._template_skel(node) if node is not None else ""
+        template_prior = self.template_counts.get(template, 0)
+        template_penalty = 0.45 * (
+            1.0 - template_prior / max(1, self.template_max)
+        )
         return (
             2.2 * balance
             + 1.4 * abs(coverage - 0.17)
             + 0.25 * stretch_penalty
             + 0.20 * depth
             + 1.5 * anchor_penalty
+            + template_penalty
+            + pyramid_penalty
         )
 
     def _strategy_designs(self, plans: list[dict] | None) -> list[dict]:
@@ -1227,6 +1278,8 @@ class ForgeEngine:
             if not rank_templates:
                 return candidate
             penalty = self._layout_penalty(signature, shapes)
+            if signature == to_ids(node):
+                penalty -= 0.18
             if penalty < best_penalty:
                 best = candidate
                 best_penalty = penalty
