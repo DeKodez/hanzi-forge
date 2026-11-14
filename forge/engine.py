@@ -45,7 +45,7 @@ from .radicals import (
     shape_for,
     structure_for,
 )
-from . import llm
+from . import critic, llm
 from .paths import IDS_DB
 from .render import finish, seed_for
 from .textdata import is_cjk, short_meaning
@@ -1348,6 +1348,81 @@ class ForgeEngine:
                 best_penalty = penalty
         return best
 
+    def _candidate_design(self, candidate: Candidate) -> dict:
+        semantic = candidate.semantic
+        if candidate.phonetic:
+            return {
+                "type": "phono_semantic",
+                "components": list(candidate.parts),
+                "forms": list(candidate.shapes),
+                "structure": candidate.structure or "",
+                "semantic": semantic,
+                "phonetic": candidate.phonetic,
+                "reading": candidate.reading,
+                "gloss": candidate.gloss,
+                "rationale": candidate.rationale,
+            }
+        sem = semantic.split("+") if semantic else list(candidate.parts)
+        return {
+            "type": "ideographic",
+            "components": list(candidate.parts),
+            "forms": list(candidate.shapes),
+            "structure": candidate.structure or "",
+            "semantic": sem,
+            "phonetic": "",
+            "reading": candidate.reading,
+            "gloss": candidate.gloss,
+            "rationale": candidate.rationale,
+        }
+
+    def _candidate_critique(self, candidate: Candidate) -> dict:
+        if not candidate.structure:
+            return {"score": 99.0, "issues": ["no structure"]}
+        return critic.diagnose(
+            candidate.structure,
+            candidate.shapes,
+            self.style,
+            384,
+            {shape: self._stroke_count(shape) for shape in candidate.shapes},
+        )
+
+    def _revise_creative(
+        self,
+        phrase: str,
+        analysis: dict | None,
+        creative: list[Candidate],
+        count: int,
+    ) -> list[Candidate]:
+        if not analysis:
+            return []
+        entries = []
+        for candidate in creative:
+            report = self._candidate_critique(candidate)
+            if report.get("issues"):
+                entries.append({
+                    "design": self._candidate_design(candidate),
+                    "critique": report,
+                    "score": report.get("score", 0.0),
+                })
+        if not entries:
+            return []
+        entries.sort(key=lambda entry: entry["score"], reverse=True)
+        selected = entries[:4]
+        revisions = llm.revise(
+            phrase,
+            analysis,
+            [entry["design"] for entry in selected],
+            [entry["critique"] for entry in selected],
+        )
+        if not revisions:
+            return []
+        return self._llm_candidates(
+            phrase,
+            count=count,
+            analysis=analysis,
+            designs=revisions,
+        )
+
     def _llm_candidates(
         self,
         phrase: str,
@@ -1617,6 +1692,15 @@ class ForgeEngine:
                         creative.insert(0, anchored)
 
             if creative:
+                revised = self._revise_creative(phrase, analysis, creative, count)
+                if revised:
+                    seen = {(c.structure or "", c.shapes) for c in creative}
+                    for candidate in revised:
+                        key = (candidate.structure or "", candidate.shapes)
+                        if key not in seen:
+                            seen.add(key)
+                            creative.append(candidate)
+                creative.sort(key=lambda c: self._candidate_critique(c).get("score", 99.0))
                 llm_used = True
                 merged: list[Candidate] = []
                 seen: set[tuple[str, tuple[str, ...]]] = set()

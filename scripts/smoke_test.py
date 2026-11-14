@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT))
 
 from forge import llm  # noqa: E402
 from forge.compose import _top_cap, layout_trace  # noqa: E402
+from forge.critic import diagnose  # noqa: E402
 from forge.engine import ForgeEngine, sanitize_layout_text  # noqa: E402
 from forge.ids import parse_ids  # noqa: E402
 
@@ -36,6 +37,7 @@ def main() -> int:
         (engine._position_ok(parse_ids("⿱宀召")), "roof in top position is accepted"),
         (not engine._position_ok(parse_ids("⿰宀客")), "roof in a side position is rejected"),
         (_top_cap("宀", "召", "brush") >= 0.22, "roof cap is general, not a fixed tiny cap"),
+        ("金" in " ".join(diagnose("⿰金城", ("金", "城"), "brush", 384, {"金": 8, "城": 9})["issues"]), "critic detects a stretched full component"),
         (parse_ids("⿻木火") is not None, "overlay IDS parses"),
         (parse_ids("⿼口木") is not None, "right enclosure IDS parses"),
         (parse_ids("⿾木") is not None, "unary reflection IDS parses"),

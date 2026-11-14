@@ -550,6 +550,119 @@ def strategize(
     return []
 
 
+REVISION_VERSION = "revision-v1"
+REVISION_PROMPT = """You are a layout editor for Chinese-character compositions.
+The renderer has measured the actual glyph and reported layout problems. Propose up
+to three revised designs for the same phrase.
+
+Fix problems structurally, not by special-casing character names:
+- a stretched or undersized component may need a different IDS arrangement, a larger
+  slot, or its complete form instead of a radical variant;
+- merged/occluded components may need a different structure;
+- sparse or overcrowded glyphs may need a different component count or layout.
+
+Keep the phrase's reading and core meaning. Components must be two to four single
+renderable CJK characters, each used exactly once. Use full IDS strings. Use "forms"
+to preserve complete characters or "auto" for a conventional positional variant.
+Use ⿻ only for two complete components that genuinely share a center.
+
+Return JSON only:
+{"designs": [
+  {"type": "phono_semantic|ideographic",
+   "components": ["..."], "forms": ["..."], "structure": "...",
+   "semantic": "..."|["..."], "phonetic": "", "reading": "one syllable",
+   "gloss": "short meaning", "rationale": "why the revision fixes the layout"}
+]}
+"""
+
+
+def revise(
+    phrase: str,
+    analysis: dict | None,
+    current_designs: list[dict],
+    critique: list[dict],
+) -> list[dict]:
+    """Ask the model to revise designs after a rendered-layout critique."""
+    key, base, model = _config()
+    if not key or not current_designs:
+        return []
+    digest = __import__("hashlib").sha1(
+        json.dumps(
+            {"designs": current_designs, "critique": critique},
+            sort_keys=True,
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()[:12]
+    cache_key = f"{REVISION_VERSION}::{model}::{phrase.strip().lower()}::{digest}"
+    cache = _load_cache()
+    if cache_key in cache:
+        cached = cache[cache_key]
+        return cached if isinstance(cached, list) else []
+
+    max_tokens, timeout = _limits()
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": REVISION_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    f'Phrase: "{phrase}"\n'
+                    f'Analysis: {json.dumps(analysis or {}, ensure_ascii=False)}\n'
+                    f'Current designs: {json.dumps(current_designs, ensure_ascii=False)}\n'
+                    f'Rendered-layout critique: {json.dumps(critique, ensure_ascii=False)}'
+                ),
+            },
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.5,
+        "max_tokens": min(max_tokens, 2200),
+        "reasoning_effort": "none",
+    }
+    for attempt in range(2):
+        try:
+            import httpx
+
+            with httpx.Client(timeout=timeout) as client:
+                response = client.post(
+                    f"{base}/chat/completions",
+                    headers={"Authorization": f"Bearer {key}"},
+                    json=payload,
+                )
+                if (
+                    response.status_code == 400
+                    and "reasoning_effort" in payload
+                    and "reasoning_effort" in response.text
+                ):
+                    payload.pop("reasoning_effort", None)
+                    response = client.post(
+                        f"{base}/chat/completions",
+                        headers={"Authorization": f"Bearer {key}"},
+                        json=payload,
+                    )
+            if response.status_code >= 400:
+                print(f"LLM layout editor unavailable: HTTP {response.status_code}")
+                return []
+            content = response.json()["choices"][0]["message"].get("content") or ""
+            data = _parse_json(content)
+            if not isinstance(data, dict):
+                if attempt == 0:
+                    payload["temperature"] = 0.2
+                    continue
+                return []
+            designs = data.get("designs", [])
+            if not isinstance(designs, list):
+                return []
+            designs = [item for item in designs if isinstance(item, dict)]
+            cache[cache_key] = designs
+            _save_cache(cache)
+            return designs
+        except Exception as exc:
+            print(f"LLM layout editor unavailable: {str(exc)[:160]}")
+            return []
+    return []
+
+
 def _reasoning_mode() -> str:
     load_dotenv()
     return os.environ.get("FORGE_LLM_REASONING", DEFAULT_REASONING).strip().lower()
