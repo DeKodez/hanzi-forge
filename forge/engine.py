@@ -879,8 +879,17 @@ class ForgeEngine:
                 )
         return candidate
 
-    def _positional_node(self, node, parent_op: str | None = None, index: int = 0, total: int = 1):
+    def _positional_node(
+        self,
+        node,
+        parent_op: str | None = None,
+        index: int = 0,
+        total: int = 1,
+        preserve: dict[str, str] | None = None,
+    ):
         if isinstance(node, str):
+            if preserve and node in preserve:
+                return preserve[node]
             if parent_op in {"⿰", "⿲"}:
                 if index == 0:
                     return shape_for(node, "⿰", 0)
@@ -895,7 +904,9 @@ class ForgeEngine:
         op = node[0]
         children = node[1:]
         return (op, *[
-            self._positional_node(child, op, position, len(children))
+            self._positional_node(
+                child, op, position, len(children), preserve=preserve
+            )
             for position, child in enumerate(children)
         ])
 
@@ -1168,6 +1179,7 @@ class ForgeEngine:
                 designs.append({
                     "type": "phono_semantic",
                     "components": components,
+                    "forms": plan.get("forms") or ["auto"] * len(components),
                     "structure": plan.get("structure") or "",
                     "semantic": semantic,
                     "phonetic": str(plan.get("phonetic") or ""),
@@ -1182,6 +1194,7 @@ class ForgeEngine:
                 designs.append({
                     "type": "ideographic",
                     "components": components,
+                    "forms": plan.get("forms") or ["auto"] * len(components),
                     "structure": plan.get("structure") or "",
                     "semantic": semantic,
                     "phonetic": "",
@@ -1245,6 +1258,18 @@ class ForgeEngine:
             if option not in deduped:
                 deduped.append(option)
 
+        raw_forms = design.get("forms")
+        preserve: dict[str, str] = {}
+        if isinstance(raw_forms, list) and len(raw_forms) == len(components):
+            for component, form in zip(components, raw_forms):
+                if not isinstance(form, str):
+                    continue
+                form = form.strip()
+                if form in {"", "auto"}:
+                    continue
+                if len(form) == 1 and is_cjk(form) and self._component_ok(form):
+                    preserve[canonical(component)] = form
+
         rank_templates = len(components) >= 3
         best: Candidate | None = None
         best_penalty = float("inf")
@@ -1258,7 +1283,7 @@ class ForgeEngine:
             )
             if not self._position_ok(option):
                 continue
-            positional = self._positional_node(option)
+            positional = self._positional_node(option, preserve=preserve)
             shapes = tuple(all_leaves(positional))
             signature = to_ids(positional)
             if self._is_real_signature(signature):

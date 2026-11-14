@@ -66,12 +66,13 @@ Format examples only. Do NOT reuse their content; invent fresh content for the u
 phrase.
 Phono-semantic:
 - phrase: "a shelter for a lost traveler", type "phono_semantic",
-  components ["宀","灵"], structure "⿱宀灵", semantic "宀", phonetic "灵",
-  reading "líng", gloss "a roof over a spirit: shelter for someone still searching."
+  components ["宀","灵"], forms ["auto","auto"], structure "⿱宀灵",
+  semantic "宀", phonetic "灵", reading "líng",
+  gloss "a roof over a spirit: shelter for someone still searching."
 Ideographic:
 - phrase: "king of kings", type "ideographic",
-  components ["王","王","王"], structure "⿱王⿰王王",
-  semantic ["王","王","王"], phonetic "", reading "wáng",
+  components ["王","王","王"], forms ["王","王","王"],
+  structure "⿱王⿰王王", semantic ["王","王","王"], phonetic "", reading "wáng",
   gloss "king of kings; sovereignty multiplied",
   rationale "Three kings: rule stacked upon rule."
 
@@ -81,6 +82,7 @@ Return JSON only:
     {
       "type": "phono_semantic",
       "components": ["宀", "灵"],
+      "forms": ["auto", "auto"],
       "structure": "⿱宀灵",
       "semantic": "宀",
       "phonetic": "灵",
@@ -92,6 +94,7 @@ Return JSON only:
     {
       "type": "ideographic",
       "components": ["王", "王", "王"],
+      "forms": ["王", "王", "王"],
       "structure": "⿱王⿰王王",
       "semantic": ["王", "王", "王"],
       "phonetic": "",
@@ -107,6 +110,10 @@ Rules:
 - "components": exactly two for phono_semantic; two to four for ideographic. Each is one
   CJK character; phono phonetics are simple atomic characters; ideographic components
   may be complex indivisible radicals.
+- "forms" is optional and has one entry per component: a single CJK character to
+  preserve that form, or "auto" to let the engine apply the conventional positional
+  variant. Use full forms for ideographic components built from complete characters;
+  use "auto" only for conventional radicals such as 水→氵, 心→忄, and 手→扌.
 - "structure" is a full IDS string using the components exactly once, with operators
   ⿰ ⿱ ⿲ ⿳ ⿴ ⿵ ⿶ ⿷ ⿸ ⿹ ⿺. For three components use a nested 2D arrangement
   (⿱A⿰BC or ⿰A⿱BC), not a 1×3 ⿲ row of complex characters.
@@ -176,7 +183,7 @@ def _config() -> tuple[str, str, str]:
     return key, base, model
 
 
-PROMPT_VERSION = "phono-v9-analysis1"
+PROMPT_VERSION = "phono-v10-forms1"
 ANALYSIS_VERSION = "analysis-v1"
 
 ANALYSIS_PROMPT = """You are a bilingual concept analyst for a Chinese character design
@@ -354,7 +361,7 @@ def analyze(phrase: str) -> dict | None:
 
 
 
-STRATEGY_VERSION = "strategy-v1"
+STRATEGY_VERSION = "strategy-v2-forms1"
 STRATEGY_PROMPT = """You are a composition strategist for a Chinese-character design
 tool. Given a phrase and its concept analysis, propose five distinct plans for ONE new
 glyph. Think about both meaning and sound.
@@ -380,12 +387,17 @@ For repeated concepts, include a compact repeated pair and a stacked three- or
 four-component variant. The engine rejects structures that are already existing
 characters, so the variant matters.
 
+For every plan, "forms" must have one entry per component. Use a full character to
+preserve a complete component, or "auto" to apply a conventional positional variant.
+For ideographic compositions built from complete characters, normally preserve the
+full forms; use "auto" for established radicals such as 水→氵, 心→忄, and 手→扌.
+
 Return JSON only:
 {"plans": [
   {"mode": "repetition|semantic_phonetic|ideographic|metaphorical",
-   "components": ["..."], "structure": "...", "semantic": ["..."],
-   "phonetic": "", "reading": "one syllable", "gloss": "short meaning",
-   "rationale": "why this encodes meaning and/or sound"}
+   "components": ["..."], "forms": ["..."], "structure": "...",
+   "semantic": ["..."], "phonetic": "", "reading": "one syllable",
+   "gloss": "short meaning", "rationale": "why this encodes meaning and/or sound"}
 ]}
 """
 
@@ -410,6 +422,17 @@ def _normalize_plans(data) -> list[dict]:
         structure = str(raw.get("structure") or "").strip()
         if not structure or structure[0] not in "⿰⿱⿲⿳⿴⿵⿶⿷⿸⿹⿺":
             continue
+        raw_forms = raw.get("forms")
+        forms: list[str] = []
+        if isinstance(raw_forms, list) and len(raw_forms) == len(components):
+            for form in raw_forms:
+                if not isinstance(form, str):
+                    continue
+                form = form.strip()
+                if form == "auto" or _single_cjk(form):
+                    forms.append(form)
+        if len(forms) != len(components):
+            forms = ["auto"] * len(components)
         semantic = raw.get("semantic")
         if isinstance(semantic, list):
             semantic = [
@@ -422,6 +445,7 @@ def _normalize_plans(data) -> list[dict]:
         plans.append({
             "mode": str(raw.get("mode") or "ideographic").strip()[:40],
             "components": components,
+            "forms": forms,
             "structure": structure[:120],
             "semantic": semantic[:4],
             "phonetic": str(raw.get("phonetic") or "").strip()[:10],

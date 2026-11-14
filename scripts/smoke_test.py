@@ -110,6 +110,23 @@ def main() -> int:
     if not strategy_designs or strategy_designs[0]["type"] != "ideographic":
         print("FAIL  strategist plan was not converted to an ideographic design")
         failures += 1
+    full_form = engine._ideographic_candidate(
+        {
+            "type": "ideographic",
+            "components": ["金", "金", "金"],
+            "forms": ["金", "金", "金"],
+            "structure": "⿰金⿱金金",
+            "semantic": ["金", "金", "金"],
+            "phonetic": "",
+            "reading": "jīn",
+            "gloss": "city of gold",
+            "rationale": "three full gold forms",
+        },
+        "el dorado",
+    )
+    if full_form is None or full_form.shapes != ("金", "金", "金"):
+        print("FAIL  explicit full component forms were not preserved")
+        failures += 1
 
     four = engine._ideographic_candidate(
         {
