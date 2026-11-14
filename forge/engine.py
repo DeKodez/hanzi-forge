@@ -1240,6 +1240,9 @@ class ForgeEngine:
         raw = str(design.get("structure") or "").strip().replace(" ", "")
         if not raw or raw[0] not in ALL_OPS:
             return None
+        if "⿻" in raw and len(components) > 2:
+            self._last_llm_rejected.append("overlay-nested")
+            return None
         ids = raw.split("[", 1)[0]
         node = parse_ids(ids)
         if node is None or isinstance(node, str):

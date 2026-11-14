@@ -200,8 +200,7 @@ def compose_mask(
     if structure == "⿱":
         top, bottom = parts[0], parts[1]
         top_ink = _ink_shape(top, style)
-        bottom_shape = shape_for(bottom, "⿱", 1)
-        short_bottom = bottom_shape == "灬"
+        short_bottom = bottom == "灬"
 
         top_ratio = TOP_WIDTH_RATIOS.get(
             top, 0.90 if top in WIDE_TOP else 0.55
@@ -383,10 +382,7 @@ def _render_node(node, width: int, height: int, style: str) -> Image.Image:
                     ImageChops.lighter(region, right), (first_w + gap, right_y)
                 )
             else:
-                short_bottom = (
-                    isinstance(second, str)
-                    and shape_for(second, "⿱", 1) == "灬"
-                )
+                short_bottom = isinstance(second, str) and second == "灬"
                 if (
                     isinstance(first, str)
                     and isinstance(second, str)
@@ -433,9 +429,13 @@ def _render_node(node, width: int, height: int, style: str) -> Image.Image:
                     )
                     total_h = first_h + gap + bottom_h
                     top_y = max(0, (height - total_h) // 2)
-                    top = _render_node(first, width, first_h, style)
-                    region = canvas.crop((0, top_y, width, top_y + first_h))
-                    canvas.paste(ImageChops.lighter(region, top), (0, top_y))
+                    top_width = first_w if isinstance(first, str) else width
+                    top_x = (width - top_width) // 2
+                    top = _render_node(first, top_width, first_h, style)
+                    region = canvas.crop(
+                        (top_x, top_y, top_x + top_width, top_y + first_h)
+                    )
+                    canvas.paste(ImageChops.lighter(region, top), (top_x, top_y))
                     bottom = _render_leaf(second, bottom_width, bottom_h, style)
                     bottom_x = (width - bottom_width) // 2
                     bottom_y = top_y + first_h + gap
@@ -456,17 +456,17 @@ def _render_node(node, width: int, height: int, style: str) -> Image.Image:
                 if second_h < int(height * 0.20):
                     second_h = int(height * 0.20)
                     first_h = height - second_h - gap
-                top = _render_node(first, width, first_h, style)
+                top_width = first_w if isinstance(first, str) else width
+                top_x = (width - top_width) // 2
+                top = _render_node(first, top_width, first_h, style)
                 if isinstance(second, str):
                     bottom_width = int(width * 0.72)
                     bottom = _render_node(second, bottom_width, second_h, style)
                 else:
                     bottom_width = int(width * 0.82)
                     bottom = _render_node(second, bottom_width, second_h, style)
-                canvas.paste(
-                    ImageChops.lighter(canvas.crop((0, 0, width, first_h)), top),
-                    (0, 0),
-                )
+                region = canvas.crop((top_x, 0, top_x + top_width, first_h))
+                canvas.paste(ImageChops.lighter(region, top), (top_x, 0))
                 bottom_x = (width - bottom_width) // 2
                 canvas.paste(
                     ImageChops.lighter(
