@@ -41,9 +41,10 @@ def diagnose(
     style: str = "brush",
     size: int = 384,
     stroke_counts: dict[str, int] | None = None,
+    layout: dict | None = None,
 ) -> dict:
     """Return a compact, machine-readable critique of a rendered candidate."""
-    mask, trace = layout_trace(structure, shapes, size, style)
+    mask, trace = layout_trace(structure, shapes, size, style, layout)
     if not trace:
         return {
             "structure": structure,

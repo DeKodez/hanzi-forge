@@ -83,6 +83,7 @@ Return JSON only:
       "type": "phono_semantic",
       "components": ["宀", "灵"],
       "forms": ["auto", "auto"],
+      "layout": {},
       "structure": "⿱宀灵",
       "semantic": "宀",
       "phonetic": "灵",
@@ -95,6 +96,7 @@ Return JSON only:
       "type": "ideographic",
       "components": ["王", "王", "王"],
       "forms": ["王", "王", "王"],
+      "layout": {},
       "structure": "⿱王⿰王王",
       "semantic": ["王", "王", "王"],
       "phonetic": "",
@@ -117,6 +119,11 @@ Rules:
 - Complete simple characters are valid components. When combining them, preserve
   their full forms and choose an arrangement that fits both silhouettes; do not force
   a positional variant unless the character is acting as a radical.
+- "layout" is optional. It may contain left_ratio (0.20–0.60), top_ratio
+  (0.15–0.60), bottom_width (0.55–0.95), gap (0–0.04), leaf_scale (a map from
+  component to 0.7–1.3), and leaf_fit (a map from component to "fill" or "fit").
+  Use these dimensions to correct proportions; do not use them to excuse an invalid
+  structure.
 - "structure" is a full IDS string using the components exactly once, with operators
   ⿰ ⿱ ⿲ ⿳ ⿴ ⿵ ⿶ ⿷ ⿸ ⿹ ⿺ ⿻ ⿼ ⿽ ⿾ ⿿. For three components use a nested 2D
   arrangement (⿱A⿰BC or ⿰A⿱BC), not a 1×3 ⿲ row of complex characters. Use ⿻
@@ -188,7 +195,7 @@ def _config() -> tuple[str, str, str]:
     return key, base, model
 
 
-PROMPT_VERSION = "phono-v11-ids1"
+PROMPT_VERSION = "phono-v12-layout1"
 ANALYSIS_VERSION = "analysis-v1"
 
 ANALYSIS_PROMPT = """You are a bilingual concept analyst for a Chinese character design
@@ -366,7 +373,7 @@ def analyze(phrase: str) -> dict | None:
 
 
 
-STRATEGY_VERSION = "strategy-v3-ids1"
+STRATEGY_VERSION = "strategy-v4-layout1"
 STRATEGY_PROMPT = """You are a composition strategist for a Chinese-character design
 tool. Given a phrase and its concept analysis, propose five distinct plans for ONE new
 glyph. Think about both meaning and sound.
@@ -400,13 +407,16 @@ For ideographic compositions built from complete characters, normally preserve t
 full forms; use "auto" for established radicals such as 水→氵, 心→忄, and 手→扌.
 Complete simple characters can be combined directly; use ⿻ only when their
 silhouettes genuinely interlock.
+Optional "layout" may contain left_ratio, top_ratio, bottom_width, gap,
+leaf_scale, and leaf_fit; use it only to correct component proportions.
 
 Return JSON only:
 {"plans": [
   {"mode": "repetition|semantic_phonetic|ideographic|metaphorical",
-   "components": ["..."], "forms": ["..."], "structure": "...",
-   "semantic": ["..."], "phonetic": "", "reading": "one syllable",
-   "gloss": "short meaning", "rationale": "why this encodes meaning and/or sound"}
+   "components": ["..."], "forms": ["..."], "layout": {},
+   "structure": "...", "semantic": ["..."], "phonetic": "",
+   "reading": "one syllable", "gloss": "short meaning",
+   "rationale": "why this encodes meaning and/or sound"}
 ]}
 """
 
@@ -431,6 +441,7 @@ def _normalize_plans(data) -> list[dict]:
         structure = str(raw.get("structure") or "").strip()
         if not structure or structure[0] not in "⿰⿱⿲⿳⿴⿵⿶⿷⿸⿹⿺⿻⿼⿽⿾⿿":
             continue
+        layout = raw.get("layout") if isinstance(raw.get("layout"), dict) else {}
         raw_forms = raw.get("forms")
         forms: list[str] = []
         if isinstance(raw_forms, list) and len(raw_forms) == len(components):
@@ -459,6 +470,7 @@ def _normalize_plans(data) -> list[dict]:
             "semantic": semantic[:4],
             "phonetic": str(raw.get("phonetic") or "").strip()[:10],
             "reading": str(raw.get("reading") or "").strip()[:20],
+            "layout": layout,
             "gloss": str(raw.get("gloss") or "").strip()[:240],
             "rationale": str(raw.get("rationale") or "").strip()[:300],
         })
@@ -550,7 +562,7 @@ def strategize(
     return []
 
 
-REVISION_VERSION = "revision-v1"
+REVISION_VERSION = "revision-v2-layout1"
 REVISION_PROMPT = """You are a layout editor for Chinese-character compositions.
 The renderer has measured the actual glyph and reported layout problems. Propose up
 to three revised designs for the same phrase.
@@ -563,7 +575,9 @@ Fix problems structurally, not by special-casing character names:
 
 The numeric component table and the reported geometry issues are authoritative. If a
 vision critique is present, it comes from the actual rendered image and should be
-treated as visual evidence. Any ASCII map is approximate and may be ignored for size
+treated as visual evidence. You may also adjust the optional layout dimensions
+(left_ratio, top_ratio, bottom_width, gap, leaf_scale, leaf_fit) when proportions are
+the stated problem. Any ASCII map is approximate and may be ignored for size
 judgments.
 
 Keep the phrase's reading and core meaning. Components must be two to four single

@@ -184,11 +184,17 @@ def compose_mask(
     size: int,
     style: str = "brush",
     left_scale: str | None = None,
+    layout: dict | None = None,
 ) -> Image.Image:
     """Render *parts* with *structure* into a square L mask of *size*."""
     canvas = Image.new("L", (size, size), 0)
     area = int(size * 0.74)
     offset = (size - area) // 2
+
+    def paste_leaf(leaf: str, width: int, height: int, x: int, y: int) -> None:
+        leaf_mask = _render_leaf(leaf, width, height, style, layout)
+        region = canvas.crop((x, y, x + width, y + height))
+        canvas.paste(ImageChops.lighter(region, leaf_mask), (x, y))
 
     if len(parts) < 2:
         if parts:
@@ -214,9 +220,21 @@ def compose_mask(
         top_h = int(min(max(natural_h, area * 0.10), area * cap))
         top_x = offset + (area - top_w) // 2
 
-        gap = int(area * 0.004)
-        bottom_w = int(area * 0.72)
+        gap_ratio = 0.004
+        bottom_ratio = 0.72
+        top_height_ratio = 0.0
+        if isinstance(layout, dict):
+            try: gap_ratio = max(0.0, min(0.04, float(layout.get("gap", gap_ratio))))
+            except (TypeError, ValueError): pass
+            try: bottom_ratio = max(0.55, min(0.95, float(layout.get("bottom_width", bottom_ratio))))
+            except (TypeError, ValueError): pass
+            try: top_height_ratio = max(0.15, min(0.60, float(layout.get("top_ratio", 0))))
+            except (TypeError, ValueError): pass
+        gap = max(1, int(area * gap_ratio))
+        bottom_w = int(area * bottom_ratio)
         bottom_x = offset + (area - bottom_w) // 2
+        if top_height_ratio:
+            top_h = int(area * top_height_ratio)
 
         if short_bottom:
             bottom_ink = _ink_shape(bottom, style)
@@ -225,23 +243,19 @@ def compose_mask(
             total_h = top_h + gap + bottom_h
             top_y = offset + max(int(area * 0.01), (area - total_h) // 2)
             bottom_y = top_y + top_h + gap
-            _paste_resized(canvas, top_ink, top_w, top_h, top_x, top_y)
-            _paste_resized(
-                canvas, bottom_ink, bottom_w, bottom_h, bottom_x, bottom_y
-            )
+            paste_leaf(top, top_w, top_h, top_x, top_y)
+            paste_leaf(bottom, bottom_w, bottom_h, bottom_x, bottom_y)
             return canvas
 
         top_y = offset + int(area * 0.01)
-        _paste_resized(canvas, top_ink, top_w, top_h, top_x, top_y)
+        paste_leaf(top, top_w, top_h, top_x, top_y)
         bottom_y = top_y + top_h + gap
         bottom_h = offset + area - bottom_y
         if bottom_h < int(area * 0.30):
             top_h = int(area * 0.42)
             bottom_y = top_y + top_h + gap
             bottom_h = offset + area - bottom_y
-        _paste_resized(
-            canvas, _ink_shape(bottom, style), bottom_w, bottom_h, bottom_x, bottom_y
-        )
+        paste_leaf(bottom, bottom_w, bottom_h, bottom_x, bottom_y)
         return canvas
 
     if structure == "⿰":
@@ -255,19 +269,23 @@ def compose_mask(
             left_ratio = {"narrow": 0.22, "medium": 0.30, "full": 0.38}[left_scale]
         else:
             left_ratio = 0.24 if left in NARROW_LEFT else 0.38
+        gap_ratio = 0.006
+        if isinstance(layout, dict):
+            try: left_ratio = max(0.20, min(0.60, float(layout.get("left_ratio", left_ratio))))
+            except (TypeError, ValueError): pass
+            try: gap_ratio = max(0.0, min(0.04, float(layout.get("gap", gap_ratio))))
+            except (TypeError, ValueError): pass
         left_w = int(area * left_ratio)
         left_x = offset + int(area * 0.01)
         left_y = offset + (area - left_h) // 2
-        _paste_resized(canvas, left_ink, left_w, left_h, left_x, left_y)
+        paste_leaf(left, left_w, left_h, left_x, left_y)
 
-        gap = int(area * 0.006)
+        gap = max(1, int(area * gap_ratio))
         right_x = left_x + left_w + gap
         right_w = offset + area - right_x
         right_h = int(area * 0.88)
         right_y = offset + (area - right_h) // 2
-        _paste_resized(
-            canvas, _ink_shape(right, style), right_w, right_h, right_x, right_y
-        )
+        paste_leaf(right, right_w, right_h, right_x, right_y)
         return canvas
 
     boxes = LAYOUTS.get(structure, LAYOUTS["⿰"])
@@ -299,20 +317,59 @@ def _complexity(node) -> int:
     return max(1, len(_leaves_of(node)))
 
 
-def _render_leaf(leaf: str, width: int, height: int, style: str) -> Image.Image:
-    out = Image.new("L", (max(1, width), max(1, height)), 0)
-    _paste_resized(out, _ink_shape(leaf, style), width, height, 0, 0)
+def _render_leaf(
+    leaf: str,
+    width: int,
+    height: int,
+    style: str,
+    layout: dict | None = None,
+) -> Image.Image:
+    width = max(1, width)
+    height = max(1, height)
+    ink = _ink_shape(leaf, style)
+    scale = 1.0
+    fit = False
+    if isinstance(layout, dict):
+        try:
+            scale = float((layout.get("leaf_scale") or {}).get(leaf, 1.0))
+        except (TypeError, ValueError):
+            scale = 1.0
+        scale = max(0.7, min(1.3, scale))
+        fit = str((layout.get("leaf_fit") or {}).get(leaf, "fill")) == "fit"
+    if scale == 1.0 and not fit:
+        out = Image.new("L", (width, height), 0)
+        _paste_resized(out, ink, width, height, 0, 0)
+        return out
+    if fit:
+        factor = min(width * scale / max(1, ink.width), height * scale / max(1, ink.height))
+    else:
+        factor = None
+    if factor is not None:
+        tw = max(1, int(ink.width * factor))
+        th = max(1, int(ink.height * factor))
+    else:
+        tw = max(1, int(width * scale))
+        th = max(1, int(height * scale))
+    resized = ink.resize((tw, th), Image.Resampling.LANCZOS)
+    out = Image.new("L", (width, height), 0)
+    out.paste(resized, ((width - tw) // 2, (height - th) // 2))
     return out
 
 
-def _render_node(node, width: int, height: int, style: str) -> Image.Image:
+def _render_node(
+    node,
+    width: int,
+    height: int,
+    style: str,
+    layout: dict | None = None,
+) -> Image.Image:
     if isinstance(node, str):
-        return _render_leaf(node, width, height, style)
+        return _render_leaf(node, width, height, style, layout)
 
     op = node[0]
     children = node[1:]
     if len(children) == 1:
-        child = _render_node(children[0], width, height, style)
+        child = _render_node(children[0], width, height, style, layout)
         if op == "⿾":
             return child.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
         if op == "⿿":
@@ -320,13 +377,19 @@ def _render_node(node, width: int, height: int, style: str) -> Image.Image:
         return child
 
     if op == "⿻" and len(children) == 2:
-        first = _render_node(children[0], width, height, style)
-        second = _render_node(children[1], width, height, style)
+        first = _render_node(children[0], width, height, style, layout)
+        second = _render_node(children[1], width, height, style, layout)
         return ImageChops.lighter(first, second)
 
     width = max(1, width)
     height = max(1, height)
-    gap = max(1, int(min(width, height) * 0.004))
+    gap_ratio = 0.004
+    if isinstance(layout, dict):
+        try:
+            gap_ratio = max(0.0, min(0.04, float(layout.get("gap", gap_ratio))))
+        except (TypeError, ValueError):
+            pass
+    gap = max(1, int(min(width, height) * gap_ratio))
     canvas = Image.new("L", (width, height), 0)
 
     if op in {"⿰", "⿲", "⿱", "⿳"}:
@@ -363,6 +426,13 @@ def _render_node(node, width: int, height: int, style: str) -> Image.Image:
                 )
                 if compact_left:
                     first_w = int(first_w * 0.90)
+                if isinstance(layout, dict):
+                    try:
+                        override = float(layout.get("left_ratio", 0))
+                    except (TypeError, ValueError):
+                        override = 0
+                    if override:
+                        first_w = int((width - gap) * max(0.20, min(0.60, override)))
                 second_w = width - first_w - gap
                 if second_w < int(width * 0.20):
                     second_w = int(width * 0.20)
@@ -371,8 +441,8 @@ def _render_node(node, width: int, height: int, style: str) -> Image.Image:
                 left_h = int(height * 0.80) if compact_left else child_h
                 left_y = (height - left_h) // 2
                 right_y = (height - child_h) // 2
-                left = _render_node(first, first_w, left_h, style)
-                right = _render_node(second, second_w, child_h, style)
+                left = _render_node(first, first_w, left_h, style, layout)
+                right = _render_node(second, second_w, child_h, style, layout)
                 region = canvas.crop((0, left_y, first_w, left_y + left_h))
                 canvas.paste(ImageChops.lighter(region, left), (0, left_y))
                 region = canvas.crop(
@@ -418,6 +488,13 @@ def _render_node(node, width: int, height: int, style: str) -> Image.Image:
                     )
                     ratio = min(0.62, max(0.38, ratio))
                     first_h = int((height - gap) * ratio)
+                if isinstance(layout, dict):
+                    try:
+                        override = float(layout.get("top_ratio", 0))
+                    except (TypeError, ValueError):
+                        override = 0
+                    if override:
+                        first_h = int(height * max(0.15, min(0.60, override)))
 
                 if short_bottom:
                     bottom_width = int(width * 0.72)
@@ -432,7 +509,7 @@ def _render_node(node, width: int, height: int, style: str) -> Image.Image:
                     top_y = max(0, (height - total_h) // 2)
                     top_width = first_w if isinstance(first, str) else width
                     top_x = (width - top_width) // 2
-                    top = _render_node(first, top_width, first_h, style)
+                    top = _render_node(first, top_width, first_h, style, layout)
                     region = canvas.crop(
                         (top_x, top_y, top_x + top_width, top_y + first_h)
                     )
@@ -459,13 +536,15 @@ def _render_node(node, width: int, height: int, style: str) -> Image.Image:
                     first_h = height - second_h - gap
                 top_width = first_w if isinstance(first, str) else width
                 top_x = (width - top_width) // 2
-                top = _render_node(first, top_width, first_h, style)
-                if isinstance(second, str):
-                    bottom_width = int(width * 0.72)
-                    bottom = _render_node(second, bottom_width, second_h, style)
-                else:
-                    bottom_width = int(width * 0.82)
-                    bottom = _render_node(second, bottom_width, second_h, style)
+                top = _render_node(first, top_width, first_h, style, layout)
+                bottom_ratio = 0.72 if isinstance(second, str) else 0.82
+                if isinstance(layout, dict):
+                    try:
+                        bottom_ratio = max(0.55, min(0.95, float(layout.get("bottom_width", bottom_ratio))))
+                    except (TypeError, ValueError):
+                        pass
+                bottom_width = int(width * bottom_ratio)
+                bottom = _render_node(second, bottom_width, second_h, style, layout)
                 region = canvas.crop((top_x, 0, top_x + top_width, first_h))
                 canvas.paste(ImageChops.lighter(region, top), (top_x, 0))
                 bottom_x = (width - bottom_width) // 2
@@ -487,10 +566,10 @@ def _render_node(node, width: int, height: int, style: str) -> Image.Image:
             offset = 0
             for child, child_size in zip(children, sizes):
                 if horizontal:
-                    mask = _render_node(child, child_size, height, style)
+                    mask = _render_node(child, child_size, height, style, layout)
                     box = (offset, 0, offset + child_size, height)
                 else:
-                    mask = _render_node(child, width, child_size, style)
+                    mask = _render_node(child, width, child_size, style, layout)
                     box = (0, offset, width, offset + child_size)
                 region = canvas.crop(box)
                 canvas.paste(ImageChops.lighter(region, mask), box[:2])
@@ -499,7 +578,7 @@ def _render_node(node, width: int, height: int, style: str) -> Image.Image:
 
     if op in {"⿴", "⿵", "⿶", "⿷", "⿸", "⿹", "⿺", "⿼", "⿽"}:
         outer, inner = children[0], children[-1]
-        outer_mask = _render_node(outer, width, height, style)
+        outer_mask = _render_node(outer, width, height, style, layout)
         canvas.paste(outer_mask, (0, 0))
         boxes = {
             "⿴": (0.23, 0.23, 0.77, 0.79),
@@ -515,14 +594,14 @@ def _render_node(node, width: int, height: int, style: str) -> Image.Image:
         x0, y0, x1, y1 = boxes[op]
         inner_w = max(1, int((x1 - x0) * width))
         inner_h = max(1, int((y1 - y0) * height))
-        inner_mask = _render_node(inner, inner_w, inner_h, style)
+        inner_mask = _render_node(inner, inner_w, inner_h, style, layout)
         ix, iy = int(x0 * width), int(y0 * height)
         region = canvas.crop((ix, iy, ix + inner_w, iy + inner_h))
         canvas.paste(ImageChops.lighter(region, inner_mask), (ix, iy))
         return canvas
 
     # Unknown operator: fall back to a horizontal split.
-    return _render_node(("⿰", *children), width, height, style)
+    return _render_node(("⿰", *children), width, height, style, layout)
 
 
 def compose_ids(
@@ -531,6 +610,7 @@ def compose_ids(
     size: int,
     style: str = "brush",
     left_scale: str | None = None,
+    layout: dict | None = None,
 ) -> Image.Image:
     """Render an arbitrary (possibly nested) IDS tree into a square mask."""
     node = parse_ids(ids)
@@ -539,11 +619,14 @@ def compose_ids(
 
     leaves = _leaves_of(node)
     if len(leaves) == 2 and node[0] in LAYOUTS:
-        return compose_mask(node[0], tuple(leaves), size, style, left_scale=left_scale)
+        return compose_mask(
+            node[0], tuple(leaves), size, style,
+            left_scale=left_scale, layout=layout,
+        )
 
     area = int(size * 0.74)
     offset = (size - area) // 2
-    mask = _render_node(node, area, area, style)
+    mask = _render_node(node, area, area, style, layout)
     canvas = Image.new("L", (size, size), 0)
     canvas.paste(mask, (offset, offset))
     return canvas
@@ -554,13 +637,16 @@ def layout_trace(
     parts: tuple[str, ...],
     size: int = 384,
     style: str = "brush",
+    layout: dict | None = None,
 ) -> tuple[Image.Image, list[tuple[str, int, int, int, int]]]:
     """Render once while recording each leaf's slot and natural ink size."""
-    global _ink_shape, _paste_resized
+    global _ink_shape, _paste_resized, _render_leaf
     original_ink = _ink_shape
     original_paste = _paste_resized
+    original_leaf = _render_leaf
     shapes_by_id: dict[int, str] = {}
     trace: list[tuple[str, int, int, int, int]] = []
+    leaf_depth = 0
 
     def traced_ink(shape: str, style: str = "brush") -> Image.Image:
         image = original_ink(shape, style)
@@ -576,24 +662,37 @@ def layout_trace(
         y: int,
         margin: float = 0.002,
     ) -> None:
-        trace.append(
-            (
-                shapes_by_id.get(id(image), "?"),
-                width,
-                height,
-                image.width,
-                image.height,
+        if leaf_depth == 0:
+            trace.append(
+                (
+                    shapes_by_id.get(id(image), "?"),
+                    width,
+                    height,
+                    image.width,
+                    image.height,
+                )
             )
-        )
         return original_paste(canvas, image, width, height, x, y, margin)
+
+    def traced_leaf(leaf, width, height, style, layout=None):
+        nonlocal leaf_depth
+        leaf_depth += 1
+        natural = original_ink(leaf, style)
+        trace.append((leaf, width, height, natural.width, natural.height))
+        try:
+            return original_leaf(leaf, width, height, style, layout)
+        finally:
+            leaf_depth -= 1
 
     _ink_shape = traced_ink
     _paste_resized = traced_paste
+    _render_leaf = traced_leaf
     try:
-        mask = compose_ids(ids, parts, size, style)
+        mask = compose_ids(ids, parts, size, style, layout=layout)
     finally:
         _ink_shape = original_ink
         _paste_resized = original_paste
+        _render_leaf = original_leaf
     return mask, trace
 
 

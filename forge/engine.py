@@ -161,6 +161,7 @@ class Candidate:
     semantic: str = ""
     phonetic: str = ""
     left_scale: str = ""
+    layout_params: dict = field(default_factory=dict)
 
     @property
     def layout(self) -> str:
@@ -1163,6 +1164,44 @@ class ForgeEngine:
             + pyramid_penalty
         )
 
+    def _normalize_layout(self, raw) -> dict:
+        if not isinstance(raw, dict):
+            return {}
+        layout: dict = {}
+        for key, low, high in (
+            ("left_ratio", 0.20, 0.60),
+            ("top_ratio", 0.15, 0.60),
+            ("bottom_width", 0.55, 0.95),
+            ("gap", 0.0, 0.04),
+        ):
+            try:
+                value = float(raw.get(key))
+            except (TypeError, ValueError):
+                continue
+            layout[key] = max(low, min(high, value))
+        for key, low, high, default in (
+            ("leaf_scale", 0.7, 1.3, 1.0),
+            ("leaf_fit", None, None, "fill"),
+        ):
+            values = raw.get(key)
+            if not isinstance(values, dict):
+                continue
+            clean: dict[str, object] = {}
+            for component, value in values.items():
+                if not isinstance(component, str):
+                    continue
+                if key == "leaf_scale":
+                    try:
+                        number = float(value)
+                    except (TypeError, ValueError):
+                        continue
+                    clean[component] = max(low, min(high, number))
+                elif value in {"fill", "fit"}:
+                    clean[component] = value
+            if clean:
+                layout[key] = clean
+        return layout
+
     def _strategy_designs(self, plans: list[dict] | None) -> list[dict]:
         designs: list[dict] = []
         for plan in plans or []:
@@ -1186,6 +1225,7 @@ class ForgeEngine:
                     "reading": str(plan.get("reading") or ""),
                     "gloss": str(plan.get("gloss") or ""),
                     "rationale": str(plan.get("rationale") or ""),
+                    "layout": plan.get("layout") or {},
                 })
             else:
                 semantic = plan.get("semantic")
@@ -1201,6 +1241,7 @@ class ForgeEngine:
                     "reading": str(plan.get("reading") or ""),
                     "gloss": str(plan.get("gloss") or ""),
                     "rationale": str(plan.get("rationale") or ""),
+                    "layout": plan.get("layout") or {},
                 })
         return designs
 
@@ -1261,6 +1302,7 @@ class ForgeEngine:
             if option not in deduped:
                 deduped.append(option)
 
+        layout = self._normalize_layout(design.get("layout"))
         raw_forms = design.get("forms")
         preserve: dict[str, str] = {}
         if isinstance(raw_forms, list) and len(raw_forms) == len(components):
@@ -1337,6 +1379,7 @@ class ForgeEngine:
                 rationale=rationale,
                 semantic="+".join(components),
                 phonetic="",
+                layout_params=layout,
             )
             if not rank_templates:
                 return candidate
@@ -1361,6 +1404,7 @@ class ForgeEngine:
                 "reading": candidate.reading,
                 "gloss": candidate.gloss,
                 "rationale": candidate.rationale,
+                "layout": candidate.layout_params,
             }
         sem = semantic.split("+") if semantic else list(candidate.parts)
         return {
@@ -1373,6 +1417,7 @@ class ForgeEngine:
             "reading": candidate.reading,
             "gloss": candidate.gloss,
             "rationale": candidate.rationale,
+            "layout": candidate.layout_params,
         }
 
     def _candidate_critique(self, candidate: Candidate) -> dict:
@@ -1384,6 +1429,7 @@ class ForgeEngine:
             self.style,
             384,
             {shape: self._stroke_count(shape) for shape in candidate.shapes},
+            candidate.layout_params,
         )
 
     def _revise_creative(
@@ -1413,7 +1459,10 @@ class ForgeEngine:
             candidate = entry["candidate"]
             if not candidate.structure:
                 continue
-            mask = compose_ids(candidate.structure, candidate.shapes, 768, self.style)
+            mask = compose_ids(
+                candidate.structure, candidate.shapes, 768, self.style,
+                layout=candidate.layout_params,
+            )
             image = finish(
                 mask,
                 phrase,
@@ -1569,6 +1618,7 @@ class ForgeEngine:
                 semantic=semantic_value,
                 phonetic=phonetic_value,
                 left_scale=left_scale,
+                layout_params=self._normalize_layout(design.get("layout")),
             )
             candidates.append(self._prefer_reading(candidate, analysis))
 
@@ -1809,10 +1859,15 @@ class ForgeEngine:
                     1024,
                     self.style,
                     left_scale=candidate.left_scale or None,
+                    layout=candidate.layout_params,
                 )
             else:
                 mask = compose_mask(
-                    candidate.structure or "⿰", candidate.shapes, 1024, self.style
+                    candidate.structure or "⿰",
+                    candidate.shapes,
+                    1024,
+                    self.style,
+                    layout=candidate.layout_params,
                 )
             candidate.image = finish(
                 mask,
