@@ -12,7 +12,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from forge import llm  # noqa: E402
+from forge.compose import _top_cap  # noqa: E402
 from forge.engine import ForgeEngine, sanitize_layout_text  # noqa: E402
+from forge.ids import parse_ids  # noqa: E402
 
 PHRASES = [
     "the ache of missing someone on a rainy night",
@@ -31,6 +33,9 @@ def main() -> int:
         (sanitize_layout_text("The king sits above the wind. A ruler commands.") == "A ruler commands.",
          "sanitizer removes placement sentences"),
         (engine._is_atomic("龙"), "龙 is atomic"),
+        (engine._position_ok(parse_ids("⿱宀召")), "roof in top position is accepted"),
+        (not engine._position_ok(parse_ids("⿰宀客")), "roof in a side position is rejected"),
+        (_top_cap("宀", "召", "brush") >= 0.22, "roof cap is general, not a fixed tiny cap"),
         (not engine._is_atomic("铃"), "铃 is a compound"),
         (engine._is_valid_semantic("鹿"), "鹿 allowed as complex semantic"),
         (bool(engine._plan_two_part("龙", "云")), "龙+云 has a conventional plan"),

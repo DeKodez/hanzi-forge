@@ -11,7 +11,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from forge.compose import (  # noqa: E402
+from forge.compose import (
+    _top_cap,  # noqa: E402
     LEFT_WIDTH_RATIOS,
     TOP_HEIGHT_CAPS,
     TOP_WIDTH_RATIOS,
@@ -74,6 +75,8 @@ def main() -> int:
 
     # 3. Every top-cap radical respects its cap and renders.
     for radical, cap in TOP_HEIGHT_CAPS.items():
+        if radical == "宀":
+            cap = _top_cap(radical, "召", "brush")
         if not _ink_shape(radical, "pen").size or _ink_shape(radical, "pen").size == (1, 1):
             continue
         mask = compose_mask("⿱", (radical, "相"), SIZE, "pen")

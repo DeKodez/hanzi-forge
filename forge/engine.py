@@ -139,6 +139,11 @@ LEFT_RADICALS = set(LEFT_VARIANTS) | set(LEFT_VARIANTS.values()) | set(
     "口日月目石禾米虫鱼马鸟车木火手足耳骨革页王贝田力立矢示女子山土"
 )
 TOP_RADICALS = set(TOP_POSITION) | {"雨", "艹", "宀"}
+POSITIONAL_RADICALS = (
+    {"氵", "忄", "亻", "扌", "讠", "纟", "犭", "饣", "钅", "礻", "衤", "阝", "刂", "冫"}
+    | set(TOP_POSITION)
+    | {"宀", "艹", "雨", "冖", "门", "囗", "疒", "辶", "廴", "匚", "冂", "勹"}
+)
 
 
 @dataclass
@@ -217,6 +222,34 @@ class ForgeEngine:
         if op in {"⿴", "⿵", "⿶", "⿷", "⿸", "⿹", "⿺"}:
             return "outer" if index == 0 else "inner"
         return "other"
+
+    def _leaf_positions(
+        self, node, op: str | None = None, index: int = 0, total: int = 1
+    ) -> list[tuple[str, str]]:
+        if isinstance(node, str):
+            return [(node, self._slot_position(op, index, total))]
+        children = node[1:]
+        positions: list[tuple[str, str]] = []
+        for child_index, child in enumerate(children):
+            positions.extend(
+                self._leaf_positions(child, node[0], child_index, len(children))
+            )
+        return positions
+
+    def _position_ok(self, node) -> bool:
+        for component, actual in self._leaf_positions(node):
+            key = canonical(component)
+            if component not in POSITIONAL_RADICALS and key not in POSITIONAL_RADICALS:
+                continue
+            stats = self.position_counts.get(key)
+            if not stats:
+                continue
+            total = sum(stats.values()) or 1
+            expected, count = stats.most_common(1)[0]
+            if count / total >= 0.80 and expected in {"top", "left", "outer"}:
+                if actual != expected:
+                    return False
+        return True
 
     @staticmethod
     def _template_skel(node) -> str:
@@ -1223,6 +1256,8 @@ class ForgeEngine:
                 and option_leaves[0] != components[0]
                 and option_leaves[1] == components[1]
             )
+            if not self._position_ok(option):
+                continue
             positional = self._positional_node(option)
             shapes = tuple(all_leaves(positional))
             signature = to_ids(positional)

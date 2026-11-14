@@ -159,13 +159,19 @@ def render_shape_fit(
     return out
 
 
-COMPACT_ROOF_BOTTOMS = {"回", "口", "囗", "田", "日", "目", "四", "西", "百", "白"}
-
-
 def _top_cap(top: str, bottom: str | tuple, style: str) -> float:
     cap = TOP_HEIGHT_CAPS.get(top, 0.40)
-    if top == "宀" and isinstance(bottom, str) and bottom in COMPACT_ROOF_BOTTOMS:
-        cap = max(cap, 0.30)
+    if top == "宀" and isinstance(bottom, str):
+        ink = _ink_shape(bottom, style)
+        aspect = ink.width / max(1, ink.height)
+        if aspect >= 1.05:
+            cap = 0.26
+        elif aspect <= 0.75:
+            cap = 0.22
+        else:
+            cap = 0.24
+    elif top == "宀" and isinstance(bottom, tuple):
+        cap = 0.24
     return cap
 
 
@@ -392,11 +398,7 @@ def _render_node(node, width: int, height: int, style: str) -> Image.Image:
                     if short_bottom and first not in WIDE_TOP:
                         cap = 0.62
                     else:
-                        cap = (
-                            _top_cap(first, second, style)
-                            if isinstance(second, str)
-                            else TOP_HEIGHT_CAPS.get(first, 0.40)
-                        )
+                        cap = _top_cap(first, second, style)
                     first_h = int(
                         min(max(natural_h, height * 0.10), height * cap)
                     )
