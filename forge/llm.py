@@ -132,6 +132,9 @@ Rules:
 - Do not combine two full compound characters. Pair one semantic radical with one
   component; for example "lion city" should be 犭 + 城 or 土 + 狮, not 狮 + 城. The
   engine may reduce the first compound to its radical if needed.
+- Enclosure operators require a real enclosing component as the outer child:
+  ⿴ needs 囗, ⿵ needs 门/勹/冂/几, ⿷ needs 匚, ⿸ needs 广/疒/尸/户, and ⿺
+  needs 辶/廴. Never use an arbitrary semantic component as the frame.
 - Never repeat a radical. Do not pair a component with a full compound that already
   contains its radical: 示 + 祆 (both altar), 心 + 念/忆, 氵 + 河, 亻 + 你. The
   engine rejects these as tautological.

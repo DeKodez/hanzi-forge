@@ -162,6 +162,7 @@ class Candidate:
     phonetic: str = ""
     left_scale: str = ""
     layout_params: dict = field(default_factory=dict)
+    vision: dict | None = None
 
     @property
     def layout(self) -> str:
@@ -251,6 +252,16 @@ class ForgeEngine:
                 if actual != expected:
                     return False
         return True
+
+    def _enclosure_ok(self, node) -> bool:
+        if not isinstance(node, tuple):
+            return True
+        op = node[0]
+        if op in {"⿴", "⿵", "⿶", "⿷", "⿸", "⿹", "⿺"}:
+            outer = node[1]
+            if not (isinstance(outer, str) and ENCLOSURES.get(outer) == op):
+                return False
+        return all(self._enclosure_ok(child) for child in node[1:])
 
     @staticmethod
     def _template_skel(node) -> str:
@@ -653,7 +664,7 @@ class ForgeEngine:
         if source:
             explanation += f" Modeled on {source} ({self._meaning(source)})."
         return Candidate(
-            structure=structure,
+            structure=structure + "".join(shapes),
             parts=parts,
             shapes=shapes,
             explanation=explanation,
@@ -1288,6 +1299,9 @@ class ForgeEngine:
         node = parse_ids(ids)
         if node is None or isinstance(node, str):
             return None
+        if not self._enclosure_ok(node):
+            self._last_llm_rejected.append("invalid-enclosure")
+            return None
         leaves = all_leaves(node)
         if not (2 <= len(leaves) <= 4):
             return None
@@ -1391,6 +1405,32 @@ class ForgeEngine:
                 best_penalty = penalty
         return best
 
+    def _vision_rank(self, phrase: str, candidates: list[Candidate]) -> None:
+        for candidate in candidates[:3]:
+            if candidate.vision is not None or not candidate.structure:
+                continue
+            mask = compose_ids(
+                candidate.structure,
+                candidate.shapes,
+                768,
+                self.style,
+                layout=candidate.layout_params,
+            )
+            image = finish(
+                mask,
+                phrase,
+                reading=candidate.reading,
+                gloss=candidate.gloss,
+                show_seal=False,
+            )
+            candidate.vision = llm.vision_critique(
+                image,
+                phrase,
+                candidate.structure,
+                candidate.shapes,
+                self._candidate_critique(candidate),
+            )
+
     def _candidate_design(self, candidate: Candidate) -> dict:
         semantic = candidate.semantic
         if candidate.phonetic:
@@ -1419,6 +1459,36 @@ class ForgeEngine:
             "rationale": candidate.rationale,
             "layout": candidate.layout_params,
         }
+
+    def _candidate_semantic_score(
+        self, candidate: Candidate, analysis: dict | None
+    ) -> float:
+        if not isinstance(analysis, dict):
+            return 0.5
+        components = {
+            char for char in analysis.get("component_candidates", [])
+            if isinstance(char, str)
+        }
+        terms = "".join(
+            term for term in analysis.get("chinese_terms", [])
+            if isinstance(term, str)
+        )
+        components.update(terms)
+        parts = set(candidate.parts) | set(candidate.shapes)
+        if candidate.semantic:
+            parts.update(candidate.semantic.split("+"))
+        if not parts:
+            return 0.5
+        overlap = len(parts & components) / len(parts)
+        literal = str(analysis.get("literal_meaning") or "").lower()
+        gloss = (candidate.gloss or "").lower()
+        literal_terms = {
+            word for word in re.findall(r"[a-z]{4,}", literal)
+            if word not in {"with", "from", "that", "this", "into", "over"}
+        }
+        gloss_hits = sum(1 for word in literal_terms if word in gloss)
+        gloss_score = gloss_hits / max(1, len(literal_terms))
+        return max(0.0, min(1.0, 0.7 * overlap + 0.3 * gloss_score))
 
     def _candidate_critique(self, candidate: Candidate) -> dict:
         if not candidate.structure:
@@ -1479,6 +1549,7 @@ class ForgeEngine:
             )
             if vision:
                 entry["critique"]["vision"] = vision
+                candidate.vision = vision
         revisions = llm.revise(
             phrase,
             analysis,
@@ -1772,7 +1843,30 @@ class ForgeEngine:
                         if key not in seen:
                             seen.add(key)
                             creative.append(candidate)
-                creative.sort(key=lambda c: self._candidate_critique(c).get("score", 99.0))
+                def rank(candidate: Candidate) -> float:
+                    geometry = self._candidate_critique(candidate).get("score", 99.0)
+                    semantic = self._candidate_semantic_score(candidate, analysis)
+                    vision_score = (
+                        float(candidate.vision.get("score", 5.0))
+                        if candidate.vision
+                        else 5.0
+                    )
+                    return (
+                        geometry
+                        + 1.2 * (1.0 - semantic)
+                        + 1.0 * (10.0 - vision_score) / 10.0
+                    )
+
+                creative.sort(key=rank)
+                self._vision_rank(phrase, creative)
+
+                def vision_tier(candidate: Candidate) -> int:
+                    if not candidate.vision:
+                        return 1
+                    score = float(candidate.vision.get("score", 5.0))
+                    return 0 if score >= 5 else 1 if score >= 4 else 2
+
+                creative.sort(key=lambda c: (vision_tier(c), rank(c)))
                 llm_used = True
                 merged: list[Candidate] = []
                 seen: set[tuple[str, tuple[str, ...]]] = set()

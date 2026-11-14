@@ -1,0 +1,20 @@
+# Canonical end-to-end phrases, one per line.
+# Mix of concrete compounds, phrases, abstract terms, and loanwords.
+fire inside wood
+sun and moon
+forest
+gold
+a dragon made of clouds
+the feeling of coming home
+a shelter for a lost traveler
+the silence after snow
+a city that never sleeps
+the last library on earth
+a word for the smell of rain
+the sound of one hand clapping
+digital loneliness
+schadenfreude
+vaishnavism
+zoroastrianism
+shahanshah
+el dorado
