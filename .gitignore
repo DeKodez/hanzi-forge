@@ -1,40 +1,25 @@
+# Secrets
+.env
+
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
 *.so
-.Python
-env/
+.venv/
 venv/
+env/
 ENV/
-.venv
+.pytest_cache/
 
-# Model files
-*.ckpt
-*.safetensors
-models/
-checkpoints/
-
-# Generated images
-char_images/
-test_char_images/
-*.png
-*.jpg
-*.jpeg
-!example_char.png
-
-# Data files
+# Downloaded data and generated images
+assets/
 data/
-*.jsonl
-training_dataset.jsonl
-test_training_dataset.jsonl
+outputs/
+*.npy
+*.log
 
-# IDE
+# IDE and OS
 .vscode/
 .idea/
-*.swp
-*.swo
-
-# OS
 .DS_Store
 Thumbs.db
