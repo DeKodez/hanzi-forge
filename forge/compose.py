@@ -389,6 +389,7 @@ def _render_node(node, width: int, height: int, style: str) -> Image.Image:
                     and canonical(first) == canonical(second)
                 ):
                     first_h = int((height - gap) * 0.5)
+                    first_w = width
                 elif isinstance(first, str):
                     ink = _ink_shape(first, style)
                     if (
