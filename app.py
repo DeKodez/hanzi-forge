@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gradio interface for Character Forge."""
+"""Gradio interface for Hanzi Forge."""
 
 from __future__ import annotations
 
@@ -267,11 +267,11 @@ def run(
     yield main, gallery, details, downloads, llm_status_text(result, use_llm)
 
 
-with gr.Blocks(title="Character Forge") as demo:
+with gr.Blocks(title="Hanzi Forge") as demo:
     gr.HTML(
         """
         <div class="hero">
-          <h1>Character Forge</h1>
+          <h1>Hanzi Forge</h1>
           <p>An English phrase becomes a newly invented Chinese character —
           with a reading, a meaning, and a story.</p>
         </div>

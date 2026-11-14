@@ -1,6 +1,6 @@
-# Character Forge
+# Hanzi Forge
 
-Character Forge turns an English phrase into one newly composed Chinese-character
+Hanzi Forge turns an English phrase into one newly composed Chinese-character
 form, renders it as an ink-on-paper image, and shows the closest standard
 characters for comparison.
 
@@ -148,7 +148,7 @@ The interface supports a short screen recording. This is optional.
 pip install -r requirements-demo.txt
 playwright install chromium
 python scripts/record_demo.py
-# outputs/character-forge-demo.mp4
+# outputs/hanzi-forge-demo.mp4
 ```
 
 The app must be running at `http://127.0.0.1:7860`, or set `FORGE_URL`.

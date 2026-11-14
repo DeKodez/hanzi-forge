@@ -47,7 +47,7 @@ def download(url: str, dest: Path) -> None:
 
     print(f"  fetch   {url}")
     tmp = dest.with_suffix(dest.suffix + ".part")
-    request = urllib.request.Request(url, headers={"User-Agent": "character-forge/1.0"})
+    request = urllib.request.Request(url, headers={"User-Agent": "hanzi-forge/1.0"})
     with urllib.request.urlopen(request, timeout=120) as response:
         total = int(response.headers.get("Content-Length") or 0)
         received = 0

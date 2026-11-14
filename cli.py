@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Command line interface for Character Forge."""
+"""Command line interface for Hanzi Forge."""
 
 from __future__ import annotations
 

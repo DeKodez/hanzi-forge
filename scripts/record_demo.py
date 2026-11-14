@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Record a short browser demo of Character Forge as an MP4."""
+"""Record a short browser demo of Hanzi Forge as an MP4."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 URL = os.environ.get("FORGE_URL", "http://127.0.0.1:7860/")
 PHRASE = "digital loneliness"
 VIDEO_DIR = ROOT / "outputs" / "demo-raw"
-OUTPUT = ROOT / "outputs" / "character-forge-demo.mp4"
+OUTPUT = ROOT / "outputs" / "hanzi-forge-demo.mp4"
 
 CURSOR_JS = """
 (() => {
