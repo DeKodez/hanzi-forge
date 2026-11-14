@@ -1403,11 +1403,33 @@ class ForgeEngine:
                     "design": self._candidate_design(candidate),
                     "critique": report,
                     "score": report.get("score", 0.0),
+                    "candidate": candidate,
                 })
         if not entries:
             return []
         entries.sort(key=lambda entry: entry["score"], reverse=True)
         selected = entries[:4]
+        for entry in selected[:2]:
+            candidate = entry["candidate"]
+            if not candidate.structure:
+                continue
+            mask = compose_ids(candidate.structure, candidate.shapes, 768, self.style)
+            image = finish(
+                mask,
+                phrase,
+                reading=candidate.reading,
+                gloss=candidate.gloss,
+                show_seal=False,
+            )
+            vision = llm.vision_critique(
+                image,
+                phrase,
+                candidate.structure,
+                candidate.shapes,
+                entry["critique"],
+            )
+            if vision:
+                entry["critique"]["vision"] = vision
         revisions = llm.revise(
             phrase,
             analysis,

@@ -38,6 +38,7 @@ def main() -> int:
         (not engine._position_ok(parse_ids("⿰宀客")), "roof in a side position is rejected"),
         (_top_cap("宀", "召", "brush") >= 0.22, "roof cap is general, not a fixed tiny cap"),
         ("金" in " ".join(diagnose("⿰金城", ("金", "城"), "brush", 384, {"金": 8, "城": 9})["issues"]), "critic detects a stretched full component"),
+        (bool(llm._normalize_vision({"score": 7, "reads_as_single": True, "issues": ["left component small"], "summary": "test"})), "vision critique normalizes"),
         (parse_ids("⿻木火") is not None, "overlay IDS parses"),
         (parse_ids("⿼口木") is not None, "right enclosure IDS parses"),
         (parse_ids("⿾木") is not None, "unary reflection IDS parses"),

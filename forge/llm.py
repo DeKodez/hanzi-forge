@@ -561,8 +561,10 @@ Fix problems structurally, not by special-casing character names:
 - merged/occluded components may need a different structure;
 - sparse or overcrowded glyphs may need a different component count or layout.
 
-The numeric component table and the reported issues are authoritative. Any ASCII
-map is approximate and may be ignored for size judgments.
+The numeric component table and the reported geometry issues are authoritative. If a
+vision critique is present, it comes from the actual rendered image and should be
+treated as visual evidence. Any ASCII map is approximate and may be ignored for size
+judgments.
 
 Keep the phrase's reading and core meaning. Components must be two to four single
 renderable CJK characters, each used exactly once. Use full IDS strings. Use "forms"
@@ -664,6 +666,142 @@ def revise(
             print(f"LLM layout editor unavailable: {str(exc)[:160]}")
             return []
     return []
+
+
+VISION_VERSION = "vision-v1"
+VISION_PROMPT = """You are a strict Chinese-character layout critic. You are shown a
+rendered invented glyph plus its intended phrase, IDS structure, components, and
+measured geometry. Judge the image as a single character.
+
+Focus on:
+- component size relative to its role and stroke count;
+- spacing and alignment;
+- overlap or collision;
+- whether it reads as one coherent glyph rather than two separate characters;
+- obvious visual awkwardness.
+
+Do not judge the philosophical meaning. Do not invent components that are not in the
+image. Return JSON only:
+{"score": 0-10, "reads_as_single": true/false,
+ "issues": ["short concrete issue", "..."],
+ "summary": "one or two sentences"}
+"""
+
+
+def _normalize_vision(data) -> dict | None:
+    if not isinstance(data, dict):
+        return None
+    issues = data.get("issues", [])
+    if not isinstance(issues, list):
+        issues = []
+    clean_issues = []
+    for issue in issues[:8]:
+        if isinstance(issue, str):
+            text = " ".join(issue.split())[:240]
+        elif isinstance(issue, dict):
+            parts = [
+                str(issue.get(key) or "").strip()
+                for key in ("component", "problem", "fix")
+                if issue.get(key)
+            ]
+            text = " ".join(parts)[:240]
+        else:
+            continue
+        if text:
+            clean_issues.append(text)
+    try:
+        score = float(data.get("score", 0))
+    except (TypeError, ValueError):
+        score = 0.0
+    return {
+        "score": max(0.0, min(10.0, score)),
+        "reads_as_single": bool(data.get("reads_as_single", False)),
+        "issues": clean_issues,
+        "summary": " ".join(str(data.get("summary") or "").split())[:400],
+    }
+
+
+def vision_critique(
+    image,
+    phrase: str,
+    structure: str,
+    shapes: tuple[str, ...],
+    geometry: dict | None = None,
+) -> dict | None:
+    """Send the rendered glyph image to the vision-capable DeepSeek model."""
+    key, base, model = _config()
+    if not key:
+        return None
+    import base64
+    import io
+    import hashlib
+
+    buffer = io.BytesIO()
+    image.convert("RGB").save(buffer, format="PNG")
+    raw = buffer.getvalue()
+    digest = hashlib.sha1(raw).hexdigest()[:12]
+    cache_key = f"{VISION_VERSION}::{model}::{phrase.strip().lower()}::{digest}"
+    cache = _load_cache()
+    if cache_key in cache:
+        return cache[cache_key] if isinstance(cache[cache_key], dict) else None
+
+    b64 = base64.b64encode(raw).decode("ascii")
+    max_tokens, timeout = _limits()
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": VISION_PROMPT},
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": (
+                            f'Phrase: "{phrase}"\n'
+                            f"Structure: {structure}\n"
+                            f"Components: {list(shapes)}\n"
+                            f"Measured geometry: "
+                            f"{json.dumps(geometry or {}, ensure_ascii=False)}"
+                        ),
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{b64}",
+                            "detail": "low",
+                        },
+                    },
+                ],
+            },
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.2,
+        "max_tokens": min(max_tokens, 900),
+        "reasoning_effort": "none",
+    }
+    try:
+        import httpx
+
+        with httpx.Client(timeout=timeout) as client:
+            response = client.post(
+                f"{base}/chat/completions",
+                headers={"Authorization": f"Bearer {key}"},
+                json=payload,
+            )
+        if response.status_code >= 400:
+            print(f"DeepSeek vision critic unavailable: HTTP {response.status_code}")
+            return None
+        content = response.json()["choices"][0]["message"].get("content") or ""
+        critique = _normalize_vision(_parse_json(content))
+        if critique is None:
+            print("DeepSeek vision critic: invalid JSON")
+            return None
+        cache[cache_key] = critique
+        _save_cache(cache)
+        return critique
+    except Exception as exc:
+        print(f"DeepSeek vision critic unavailable: {str(exc)[:180]}")
+        return None
 
 
 def _reasoning_mode() -> str:
