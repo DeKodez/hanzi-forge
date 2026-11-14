@@ -561,6 +561,9 @@ Fix problems structurally, not by special-casing character names:
 - merged/occluded components may need a different structure;
 - sparse or overcrowded glyphs may need a different component count or layout.
 
+The numeric component table and the reported issues are authoritative. Any ASCII
+map is approximate and may be ignored for size judgments.
+
 Keep the phrase's reading and core meaning. Components must be two to four single
 renderable CJK characters, each used exactly once. Use full IDS strings. Use "forms"
 to preserve complete characters or "auto" for a conventional positional variant.

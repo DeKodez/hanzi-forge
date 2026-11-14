@@ -7,7 +7,32 @@ problems that can be fed back to a language model for revision.
 
 from __future__ import annotations
 
+from PIL import Image
+
 from .compose import layout_trace
+
+
+def _ascii_art(mask: Image.Image, width: int = 44, height: int = 44) -> str:
+    bbox = mask.getbbox()
+    if bbox is None:
+        return ""
+    crop = mask.crop(bbox)
+    scale = min(width / max(1, crop.width), height / max(1, crop.height))
+    tw = max(1, int(crop.width * scale))
+    th = max(1, int(crop.height * scale))
+    crop = crop.resize((tw, th), Image.Resampling.LANCZOS)
+    chars = "@%#*+=-:. "
+    rows: list[str] = []
+    for y in range(height):
+        row: list[str] = []
+        for x in range(width):
+            if x < (width - tw) // 2 or x >= (width + tw) // 2 or y < (height - th) // 2 or y >= (height + th) // 2:
+                row.append(" ")
+                continue
+            value = crop.getpixel((x - (width - tw) // 2, y - (height - th) // 2))
+            row.append(chars[min(len(chars) - 1, value * len(chars) // 256)])
+        rows.append("".join(row))
+    return "\n".join(rows)
 
 
 def diagnose(
@@ -90,4 +115,6 @@ def diagnose(
         "score": round(score, 3),
         "components": components,
         "issues": issues[:12],
+        "ascii": _ascii_art(mask),
+        "ascii_note": "ASCII is approximate; component metrics are authoritative.",
     }
