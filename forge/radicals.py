@@ -181,4 +181,9 @@ def describe_layout(structure: str) -> str:
         "⿸": "tucked under a shelter",
         "⿹": "wrapped from above",
         "⿺": "carried on a sweep",
+        "⿻": "overlaid",
+        "⿼": "inside a right-hand frame",
+        "⿽": "inside a lower-right frame",
+        "⿾": "mirrored",
+        "⿿": "rotated",
     }.get(structure, "combined")

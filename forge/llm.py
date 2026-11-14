@@ -114,9 +114,14 @@ Rules:
   preserve that form, or "auto" to let the engine apply the conventional positional
   variant. Use full forms for ideographic components built from complete characters;
   use "auto" only for conventional radicals such as 水→氵, 心→忄, and 手→扌.
+- Complete simple characters are valid components. When combining them, preserve
+  their full forms and choose an arrangement that fits both silhouettes; do not force
+  a positional variant unless the character is acting as a radical.
 - "structure" is a full IDS string using the components exactly once, with operators
-  ⿰ ⿱ ⿲ ⿳ ⿴ ⿵ ⿶ ⿷ ⿸ ⿹ ⿺. For three components use a nested 2D arrangement
-  (⿱A⿰BC or ⿰A⿱BC), not a 1×3 ⿲ row of complex characters.
+  ⿰ ⿱ ⿲ ⿳ ⿴ ⿵ ⿶ ⿷ ⿸ ⿹ ⿺ ⿻ ⿼ ⿽ ⿾ ⿿. For three components use a nested 2D
+  arrangement (⿱A⿰BC or ⿰A⿱BC), not a 1×3 ⿲ row of complex characters. Use ⿻
+  only when two complete components genuinely share a center; ⿾ and ⿿ are unary
+  and must wrap exactly one component.
 - Do not combine two full compound characters. Pair one semantic radical with one
   component; for example "lion city" should be 犭 + 城 or 土 + 狮, not 狮 + 城. The
   engine may reduce the first compound to its radical if needed.
@@ -183,7 +188,7 @@ def _config() -> tuple[str, str, str]:
     return key, base, model
 
 
-PROMPT_VERSION = "phono-v10-forms1"
+PROMPT_VERSION = "phono-v11-ids1"
 ANALYSIS_VERSION = "analysis-v1"
 
 ANALYSIS_PROMPT = """You are a bilingual concept analyst for a Chinese character design
@@ -361,7 +366,7 @@ def analyze(phrase: str) -> dict | None:
 
 
 
-STRATEGY_VERSION = "strategy-v2-forms1"
+STRATEGY_VERSION = "strategy-v3-ids1"
 STRATEGY_PROMPT = """You are a composition strategist for a Chinese-character design
 tool. Given a phrase and its concept analysis, propose five distinct plans for ONE new
 glyph. Think about both meaning and sound.
@@ -380,8 +385,10 @@ generic heart, king, water, or animal symbols.
 Every component must be one renderable CJK character and must not be a function
 character. Use two to four components, each exactly once. Full compound components
 must be at most nine strokes. The structure must be a full IDS string using the
-operators ⿰ ⿱ ⿲ ⿳ ⿴ ⿵ ⿶ ⿷ ⿸ ⿹ ⿺. For three components use a nested
-two-dimensional arrangement such as ⿱A⿰BC or ⿰A⿱BC, not a text description.
+operators ⿰ ⿱ ⿲ ⿳ ⿴ ⿵ ⿶ ⿷ ⿸ ⿹ ⿺ ⿻ ⿼ ⿽ ⿾ ⿿. For three components
+use a nested two-dimensional arrangement such as ⿱A⿰BC or ⿰A⿱BC, not a text
+description. Use ⿻ only when two complete components share a center; ⿾ and ⿿
+are unary and must wrap exactly one component.
 
 For repeated concepts, include a compact repeated pair and a stacked three- or
 four-component variant. The engine rejects structures that are already existing
@@ -391,6 +398,8 @@ For every plan, "forms" must have one entry per component. Use a full character 
 preserve a complete component, or "auto" to apply a conventional positional variant.
 For ideographic compositions built from complete characters, normally preserve the
 full forms; use "auto" for established radicals such as 水→氵, 心→忄, and 手→扌.
+Complete simple characters can be combined directly; use ⿻ only when their
+silhouettes genuinely interlock.
 
 Return JSON only:
 {"plans": [
@@ -420,7 +429,7 @@ def _normalize_plans(data) -> list[dict]:
         if not (2 <= len(components) <= 4):
             continue
         structure = str(raw.get("structure") or "").strip()
-        if not structure or structure[0] not in "⿰⿱⿲⿳⿴⿵⿶⿷⿸⿹⿺":
+        if not structure or structure[0] not in "⿰⿱⿲⿳⿴⿵⿶⿷⿸⿹⿺⿻⿼⿽⿾⿿":
             continue
         raw_forms = raw.get("forms")
         forms: list[str] = []

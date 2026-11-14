@@ -52,6 +52,9 @@ LAYOUTS: dict[str, tuple[tuple[float, float, float, float], ...]] = {
     "⿸": ((0.00, 0.00, 1.00, 1.00), (0.37, 0.42, 0.86, 0.90)),
     "⿹": ((0.00, 0.00, 1.00, 1.00), (0.15, 0.34, 0.69, 0.86)),
     "⿺": ((0.00, 0.00, 1.00, 1.00), (0.28, 0.12, 0.84, 0.64)),
+    "⿻": ((0.01, 0.06, 0.99, 0.94), (0.01, 0.06, 0.99, 0.94)),
+    "⿼": ((0.00, 0.00, 1.00, 1.00), (0.16, 0.20, 0.66, 0.82)),
+    "⿽": ((0.00, 0.00, 1.00, 1.00), (0.14, 0.42, 0.63, 0.90)),
 }
 
 
@@ -310,7 +313,17 @@ def _render_node(node, width: int, height: int, style: str) -> Image.Image:
     op = node[0]
     children = node[1:]
     if len(children) == 1:
-        return _render_node(children[0], width, height, style)
+        child = _render_node(children[0], width, height, style)
+        if op == "⿾":
+            return child.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+        if op == "⿿":
+            return child.rotate(180)
+        return child
+
+    if op == "⿻" and len(children) == 2:
+        first = _render_node(children[0], width, height, style)
+        second = _render_node(children[1], width, height, style)
+        return ImageChops.lighter(first, second)
 
     width = max(1, width)
     height = max(1, height)
@@ -483,7 +496,7 @@ def _render_node(node, width: int, height: int, style: str) -> Image.Image:
                 offset += child_size + gap
         return canvas
 
-    if op in {"⿴", "⿵", "⿶", "⿷", "⿸", "⿹", "⿺"}:
+    if op in {"⿴", "⿵", "⿶", "⿷", "⿸", "⿹", "⿺", "⿼", "⿽"}:
         outer, inner = children[0], children[-1]
         outer_mask = _render_node(outer, width, height, style)
         canvas.paste(outer_mask, (0, 0))
@@ -495,6 +508,8 @@ def _render_node(node, width: int, height: int, style: str) -> Image.Image:
             "⿸": (0.30, 0.36, 0.84, 0.88),
             "⿹": (0.15, 0.34, 0.69, 0.86),
             "⿺": (0.28, 0.12, 0.84, 0.64),
+            "⿼": (0.16, 0.20, 0.66, 0.82),
+            "⿽": (0.14, 0.42, 0.63, 0.90),
         }
         x0, y0, x1, y1 = boxes[op]
         inner_w = max(1, int((x1 - x0) * width))

@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from forge import llm  # noqa: E402
-from forge.compose import _top_cap  # noqa: E402
+from forge.compose import _top_cap, layout_trace  # noqa: E402
 from forge.engine import ForgeEngine, sanitize_layout_text  # noqa: E402
 from forge.ids import parse_ids  # noqa: E402
 
@@ -36,6 +36,11 @@ def main() -> int:
         (engine._position_ok(parse_ids("⿱宀召")), "roof in top position is accepted"),
         (not engine._position_ok(parse_ids("⿰宀客")), "roof in a side position is rejected"),
         (_top_cap("宀", "召", "brush") >= 0.22, "roof cap is general, not a fixed tiny cap"),
+        (parse_ids("⿻木火") is not None, "overlay IDS parses"),
+        (parse_ids("⿼口木") is not None, "right enclosure IDS parses"),
+        (parse_ids("⿾木") is not None, "unary reflection IDS parses"),
+        (parse_ids("⿽口木") is not None, "lower-right enclosure IDS parses"),
+        (parse_ids("⿿木") is not None, "rotation IDS parses"),
         (not engine._is_atomic("铃"), "铃 is a compound"),
         (engine._is_valid_semantic("鹿"), "鹿 allowed as complex semantic"),
         (bool(engine._plan_two_part("龙", "云")), "龙+云 has a conventional plan"),
@@ -109,6 +114,10 @@ def main() -> int:
     strategy_designs = engine._strategy_designs(plans)
     if not strategy_designs or strategy_designs[0]["type"] != "ideographic":
         print("FAIL  strategist plan was not converted to an ideographic design")
+        failures += 1
+    overlay, overlay_trace = layout_trace("⿻木火", ("木", "火"), 512, "brush")
+    if len(overlay_trace) != 2 or overlay_trace[0][1:3] != overlay_trace[1][1:3]:
+        print("FAIL  overlay components were not rendered in the same slot")
         failures += 1
     full_form = engine._ideographic_candidate(
         {

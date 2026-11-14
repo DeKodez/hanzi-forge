@@ -8,9 +8,10 @@ forged composition already exists as a real character.
 
 from __future__ import annotations
 
-BINARY_OPS = set("⿰⿱⿴⿵⿶⿷⿸⿹⿺⿻")
+BINARY_OPS = set("⿰⿱⿴⿵⿶⿷⿸⿹⿺⿻⿼⿽")
+UNARY_OPS = set("⿾⿿")
 TERNARY_OPS = set("⿲⿳")
-ALL_OPS = BINARY_OPS | TERNARY_OPS
+ALL_OPS = BINARY_OPS | UNARY_OPS | TERNARY_OPS
 
 UNKNOWN = "？"
 
@@ -25,6 +26,10 @@ STRUCTURE_NAMES = {
     "⿹": "upper-right enclosure",
     "⿺": "lower-left enclosure",
     "⿻": "overlay",
+    "⿼": "enclosure from the right",
+    "⿽": "enclosure from the lower right",
+    "⿾": "horizontal reflection",
+    "⿿": "rotation",
 }
 
 
@@ -36,6 +41,9 @@ def _parse_node(text: str, index: int = 0):
         left, index = _parse_node(text, index + 1)
         right, index = _parse_node(text, index)
         return (char, left, right), index
+    if char in UNARY_OPS:
+        child, index = _parse_node(text, index + 1)
+        return (char, child), index
     if char in TERNARY_OPS:
         first, index = _parse_node(text, index + 1)
         second, index = _parse_node(text, index)
